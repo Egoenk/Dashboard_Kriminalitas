@@ -1,41 +1,49 @@
-from dash import Dash, dcc, html, Input, Output
+import dash
+from dash import html, dcc
 import dash_bootstrap_components as dbc
-from server import app
-from pages import dashboard
-import logging
 
-# Configure logging
-logging.basicConfig(level=logging.INFO, 
-                    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-logger = logging.getLogger(__name__)
+# Initialize app with Dash Pages & Bootstrap
+app = dash.Dash(
+    __name__,
+    use_pages=True,
+    external_stylesheets=[dbc.themes.BOOTSTRAP]
+)
+server = app.server  # for deployment
 
-app.layout = html.Div([
-    dcc.Location(id="url", refresh=False),
-    dbc.NavbarSimple(
-        brand="Crime Rate Prediction Dashboard",
-        brand_href="/dashboard",
-        color="primary",
-        dark=True,
-        children=[
-            dbc.NavItem(dbc.NavLink("Dashboard", href="/dashboard")),
+# Sidebar layout
+sidebar = html.Div([
+    html.H2("Menu", className="display-6"),
+    html.Hr(),
+    dbc.Nav(
+        [
+            dbc.NavLink("Data", href="/data", active="exact"),
+            dbc.NavLink("Visualisasi", href="/visualisasi", active="exact"),
+            dbc.NavLink("Prediksi", href="/prediksi", active="exact"),
+            dbc.NavLink("Logout", href="/Logout", active="exact"),
+
         ],
+        vertical=True,
+        pills=True,
     ),
-    html.Div(id="page-content", className="container-fluid p-4")
+], style={
+    "position": "fixed",
+    "top": 0,
+    "left": 0,
+    "bottom": 0,
+    "width": "16rem",
+    "padding": "2rem 1rem",
+    "background-color": "#f8f9fa",
+})
+
+# Main app layout
+app.layout = html.Div([
+    dcc.Location(id="url"),
+    sidebar,
+    html.Div(
+        dash.page_container,
+        style={"margin-left": "18rem", "padding": "2rem 1rem"},
+    )
 ])
 
-@app.callback(
-    Output("page-content", "children"),
-    [Input("url", "pathname")]
-)
-def render_page_content(pathname):
-    try:
-        if pathname == "/dashboard":
-            return dashboard.layout
-        return dcc.Location(pathname="/dashboard", id="redirect-dashboard")
-    except Exception as e:
-        logger.error(f"Error rendering page: {str(e)}")
-        return dbc.Alert("An error occurred while loading the page.", color="danger")
-
 if __name__ == "__main__":
-    app.title = "Crime Rate Prediction Dashboard"
     app.run_server(debug=True)
