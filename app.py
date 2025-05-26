@@ -1,14 +1,8 @@
-import dash
+# app.py
 from dash import html, dcc
 import dash_bootstrap_components as dbc
-
-# Initialize app with Dash Pages & Bootstrap
-app = dash.Dash(
-    __name__,
-    use_pages=True,
-    external_stylesheets=[dbc.themes.BOOTSTRAP]
-)
-server = app.server  # for deployment
+import dash
+from server import app  # Import the app instance from server.py
 
 # Sidebar layout
 sidebar = html.Div([
@@ -17,10 +11,10 @@ sidebar = html.Div([
     dbc.Nav(
         [
             dbc.NavLink("Data", href="/data", active="exact"),
+            dbc.NavLink("Upload CSV", href="/upload", active="exact"),
             dbc.NavLink("Visualisasi", href="/visualisasi", active="exact"),
             dbc.NavLink("Prediksi", href="/prediksi", active="exact"),
             dbc.NavLink("Logout", href="/Logout", active="exact"),
-
         ],
         vertical=True,
         pills=True,
