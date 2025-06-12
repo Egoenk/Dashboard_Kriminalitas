@@ -1,161 +1,224 @@
-# pages/data.py - Updated with authentication
+# pages/data.py - Synced with visualisasi page functionality
 import dash
 from dash import html, dcc, dash_table, Input, Output, State, callback
 import dash_bootstrap_components as dbc
 import pandas as pd
 from server import db
-from auth import auth_manager
+import logging
 
 dash.register_page(__name__, path="/data", name="Data")
 
-# Function to fetch all data from Firestore
-def get_all_data():
+logger = logging.getLogger(__name__)
+
+def get_firestore_collections():
+    """Get all collection names from Firestore"""
     try:
-        # Reference to the collection (adjust your collection name as needed)
-        collection_ref = db.collection('crime_data')
-        docs = collection_ref.stream()
-        
+        collections = db.collections()
+        collection_names = [col.id for col in collections]
+        return collection_names
+    except Exception as e:
+        logger.error(f"Error getting collections: {e}")
+        return []
+
+def get_collection_data(collection_name):
+    """Get data from a specific Firestore collection"""
+    try:
+        docs = db.collection(collection_name).stream()
         data = []
         for doc in docs:
             doc_data = doc.to_dict()
-            doc_data['id'] = doc.id  # Add document ID to the data
+            doc_data['id'] = doc.id  # Add document ID
             data.append(doc_data)
-        
+        return data
+    except Exception as e:
+        logger.error(f"Error getting data from collection {collection_name}: {e}")
+        return []
+
+def get_all_data(collection_name='crime_data'):
+    """Get data from specified collection"""
+    try:
+        data = get_collection_data(collection_name)
         return pd.DataFrame(data) if data else pd.DataFrame()
     except Exception as e:
-        print(f"Error fetching data: {e}")
+        logger.error(f"Error fetching data: {e}")
         return pd.DataFrame()
 
 # Layout for the data page
 layout = html.Div([
-    dcc.Store(id="auth-check", data={"check": True}),
-    html.Div(id="data-page-content")
+    # Page header
+    dbc.Row([
+        dbc.Col([
+            html.H2("Data Management", className="mb-4"),
+        ])
+    ]),
+    
+    # Collection selection and controls row
+    dbc.Row([
+        dbc.Col([
+            html.Label("Pilih Koleksi Data:", className="fw-bold mb-2"),
+            dcc.Dropdown(
+                id='data-collection-dropdown',
+                placeholder="Pilih koleksi dari Firestore...",
+                className="mb-3",
+                value='crime_data'  # Default to crime_data if it exists
+            ),
+        ], width=6),
+        dbc.Col([
+            html.Label("Actions:", className="fw-bold mb-2"),
+            html.Div([
+                dbc.Button("Load Data", id="load-data-button", 
+                          color="info", className="me-2"),
+                dbc.Button("Add New Row", id="add-row-button", 
+                          color="success", className="me-2", disabled=True),
+                dbc.Button("Save Changes", id="save-changes-button", 
+                          color="warning", className="me-2", disabled=True),
+            ], className="mb-3")
+        ], width=6)
+    ]),
+    
+    # Status and info row
+    dbc.Row([
+        dbc.Col([
+            html.Div(id="data-status-message", className="mb-3"),
+            html.Div(id="data-info", className="mb-3"),
+        ])
+    ]),
+    
+    # Data table
+    dbc.Row([
+        dbc.Col([
+            dcc.Loading(
+                id="loading-data-table",
+                children=[
+                    dash_table.DataTable(
+                        id='firebase-data-table',
+                        editable=True,
+                        row_deletable=True,
+                        filter_action="native",
+                        sort_action="native",
+                        sort_mode="multi",
+                        page_action="native",
+                        page_size=15,
+                        style_table={
+                            'overflowX': 'auto',
+                            'border': '1px solid #dee2e6',
+                            'borderRadius': '0.375rem'
+                        },
+                        style_cell={
+                            'minWidth': '100px', 
+                            'width': '150px', 
+                            'maxWidth': '200px',
+                            'overflow': 'hidden',
+                            'textOverflow': 'ellipsis',
+                            'padding': '10px',
+                            'fontFamily': 'Arial, sans-serif'
+                        },
+                        style_header={
+                            'backgroundColor': '#495057',
+                            'color': 'white',
+                            'fontWeight': 'bold',
+                            'textAlign': 'center'
+                        },
+                        style_data={
+                            'backgroundColor': 'white',
+                            'color': 'black',
+                        },
+                        style_data_conditional=[
+                            {
+                                'if': {'row_index': 'odd'},
+                                'backgroundColor': '#f8f9fa'
+                            }
+                        ],
+                        data=[],
+                        columns=[]
+                    ),
+                ],
+                type="default",
+            )
+        ])
+    ]),
+    
+    # Store components for data
+    dcc.Store(id="table-data-store"),
+    dcc.Store(id="selected-collection-store"),
 ])
 
-# Authentication check callback
+# Callback to populate collection dropdown
 @callback(
-    Output("data-page-content", "children"),
-    [Input("auth-check", "data")],
-    [State("login-status-store", "data")]
+    Output('data-collection-dropdown', 'options'),
+    Input('data-collection-dropdown', 'id')
 )
-def check_auth_and_display(auth_check, login_data):
-    # Verify authentication
-    if not login_data or not login_data.get("logged_in"):
-        return html.Div([
-            dcc.Location(pathname="/login", id="redirect-to-login")
-        ])
-    
-    session_id = login_data.get("session_id")
-    is_valid, session_data = auth_manager.validate_session(session_id)
-    
-    if not is_valid:
-        return html.Div([
-            dcc.Location(pathname="/login", id="redirect-to-login")
-        ])
-    
-    # User is authenticated, show the data page
-    username = session_data.get("username")
-    role = session_data.get("role")
-    
-    return html.Div([
-        # Page header with user info
-        dbc.Row([
-            dbc.Col([
-                html.H2("Data Management", className="mb-1"),
-                html.P(f"Logged in as: {username} ({role})", 
-                       className="text-muted mb-4")
-            ])
-        ]),
-        
-        # Action buttons row
-        dbc.Row([
-            dbc.Col([
-                dbc.Button("Refresh Data", id="refresh-button", 
-                          color="primary", className="me-2"),
-                dbc.Button("Add New Row", id="add-row-button", 
-                          color="success", className="me-2"),
-                dbc.Button("Save Changes", id="save-changes-button", 
-                          color="warning", className="me-2"),
-            ], className="mb-3")
-        ]),
-        
-        # Data table
-        dbc.Row([
-            dbc.Col([
-                dash_table.DataTable(
-                    id='firebase-data-table',
-                    editable=True,
-                    row_deletable=True if role == 'admin' else False,
-                    filter_action="native",
-                    sort_action="native",
-                    sort_mode="multi",
-                    page_action="native",
-                    page_size=15,
-                    style_table={
-                        'overflowX': 'auto',
-                        'border': '1px solid #dee2e6',
-                        'borderRadius': '0.375rem'
-                    },
-                    style_cell={
-                        'minWidth': '100px', 
-                        'width': '150px', 
-                        'maxWidth': '200px',
-                        'overflow': 'hidden',
-                        'textOverflow': 'ellipsis',
-                        'padding': '10px',
-                        'fontFamily': 'Arial, sans-serif'
-                    },
-                    style_header={
-                        'backgroundColor': '#495057',
-                        'color': 'white',
-                        'fontWeight': 'bold',
-                        'textAlign': 'center'
-                    },
-                    style_data={
-                        'backgroundColor': 'white',
-                        'color': 'black',
-                    },
-                    style_data_conditional=[
-                        {
-                            'if': {'row_index': 'odd'},
-                            'backgroundColor': '#f8f9fa'
-                        }
-                    ],
-                ),
-            ])
-        ]),
-        
-        # Status message
-        dbc.Row([
-            dbc.Col([
-                html.Div(id="status-message", className="mt-3")
-            ])
-        ]),
-        
-        # Store component for data
-        dcc.Store(id="table-data-store"),
-    ])
+def update_collection_options(_):
+    """Update collection dropdown options"""
+    try:
+        collections = get_firestore_collections()
+        options = [{'label': col, 'value': col} for col in collections]
+        return options
+    except Exception as e:
+        logger.error(f"Error updating collection options: {e}")
+        return []
 
-# Callback to load data initially and on refresh
+# Callback to enable/disable buttons based on collection selection
 @callback(
-    Output("table-data-store", "data"),
-    [Input("refresh-button", "n_clicks")],
-    [State("login-status-store", "data")],
-    prevent_initial_call=False
+    [Output('load-data-button', 'disabled'),
+     Output('selected-collection-store', 'data')],
+    Input('data-collection-dropdown', 'value')
 )
-def load_data(n_clicks, login_data):
-    # Check authentication
-    if not login_data or not login_data.get("logged_in"):
-        return []
+def enable_buttons(collection_name):
+    """Enable buttons when collection is selected"""
+    disabled = collection_name is None
+    return False, collection_name  # Always enable Load Data button
+
+# Callback to load data from selected collection
+@callback(
+    [Output("table-data-store", "data"),
+     Output("data-status-message", "children"),
+     Output("data-info", "children"),
+     Output('add-row-button', 'disabled'),
+     Output('save-changes-button', 'disabled')],
+    Input("load-data-button", "n_clicks"),
+    State("selected-collection-store", "data")
+)
+def load_data(n_clicks, collection_name):
+    if not n_clicks or not collection_name:
+        return [], "", "", True, True
     
-    session_id = login_data.get("session_id")
-    is_valid, session_data = auth_manager.validate_session(session_id)
-    
-    if not is_valid:
-        return []
-    
-    df = get_all_data()
-    return df.to_dict('records') if not df.empty else []
+    try:
+        data = get_collection_data(collection_name)
+        
+        if not data:
+            status_msg = dbc.Alert(
+                f"Koleksi '{collection_name}' tidak memiliki data atau tidak ditemukan.", 
+                color="warning"
+            )
+            return [], status_msg, "", True, True
+        
+        df = pd.DataFrame(data)
+        
+        # Create status message
+        status_msg = dbc.Alert(
+            f"Berhasil memuat {len(df)} baris data dari koleksi '{collection_name}'", 
+            color="success"
+        )
+        
+        # Create info about the data
+        info_content = [
+            html.H5("Informasi Data:", className="mb-2"),
+            html.P(f"Jumlah baris: {len(df)}"),
+            html.P(f"Jumlah kolom: {len(df.columns)}"),
+            html.P(f"Kolom tersedia: {', '.join(df.columns.tolist())}")
+        ]
+        info_div = dbc.Card(
+            dbc.CardBody(info_content),
+            color="light",
+            className="mb-3"
+        )
+        
+        return df.to_dict('records'), status_msg, info_div, False, False
+        
+    except Exception as e:
+        error_msg = dbc.Alert(f"Error memuat data: {str(e)}", color="danger")
+        return [], error_msg, "", True, True
 
 # Callback to update table from store
 @callback(
@@ -165,17 +228,28 @@ def load_data(n_clicks, login_data):
 )
 def update_table(data):
     if not data:
-        # Return empty table with basic structure
-        return [], [
-            {"name": "Date", "id": "date"},
-            {"name": "Crime Type", "id": "crime_type"},
-            {"name": "District", "id": "district"},
-            {"name": "Count", "id": "count"}
-        ]
+        # Return empty table
+        return [], []
     
-    # Create columns based on data keys, excluding the id column from display
-    columns = [{"name": key.replace('_', ' ').title(), "id": key} 
-              for key in data[0].keys() if key != 'id']
+    # Create columns based on data keys, excluding the id column from display for editing
+    # but keeping it in data for reference
+    columns = []
+    for key in data[0].keys():
+        if key == 'id':
+            # Keep ID column but make it non-editable
+            columns.append({
+                "name": "ID", 
+                "id": key, 
+                "editable": False,
+                "type": "text"
+            })
+        else:
+            columns.append({
+                "name": key.replace('_', ' ').title(), 
+                "id": key,
+                "editable": True
+            })
+    
     return data, columns
 
 # Callback to add new row
@@ -183,23 +257,16 @@ def update_table(data):
     Output("table-data-store", "data", allow_duplicate=True),
     Input("add-row-button", "n_clicks"),
     [State("table-data-store", "data"),
-     State("login-status-store", "data")],
+     State("selected-collection-store", "data")],
     prevent_initial_call=True
 )
-def add_row(n_clicks, current_data, login_data):
-    # Check authentication
-    if not login_data or not login_data.get("logged_in"):
-        return current_data or []
-    
-    session_id = login_data.get("session_id")
-    is_valid, session_data = auth_manager.validate_session(session_id)
-    
-    if not is_valid:
+def add_row(n_clicks, current_data, collection_name):
+    if not collection_name:
         return current_data or []
     
     if not current_data:
-        # If no data yet, create a table with placeholder columns
-        return [{"id": "new_row", "date": "", "crime_type": "", "district": "", "count": ""}]
+        # If no data yet, create a basic structure
+        return [{"id": "new_row_1", "field1": "", "field2": "", "field3": ""}]
     
     # Create a new row with the same columns as existing data
     new_row = {key: "" for key in current_data[0].keys()}
@@ -209,29 +276,20 @@ def add_row(n_clicks, current_data, login_data):
 
 # Callback to save changes
 @callback(
-    [Output("status-message", "children"),
+    [Output("data-status-message", "children", allow_duplicate=True),
      Output("table-data-store", "data", allow_duplicate=True)],
     Input("save-changes-button", "n_clicks"),
     [State("firebase-data-table", "data"),
-     State("login-status-store", "data")],
+     State("selected-collection-store", "data")],
     prevent_initial_call=True
 )
-def save_changes(n_clicks, table_data, login_data):
-    # Check authentication
-    if not login_data or not login_data.get("logged_in"):
-        return dbc.Alert("Authentication required", color="danger"), []
-    
-    session_id = login_data.get("session_id")
-    is_valid, session_data = auth_manager.validate_session(session_id)
-    
-    if not is_valid:
-        return dbc.Alert("Session expired", color="danger"), []
-    
-    if not table_data:
-        return dbc.Alert("No data to save", color="warning"), []
+def save_changes(n_clicks, table_data, collection_name):
+    if not table_data or not collection_name:
+        return dbc.Alert("Tidak ada data untuk disimpan", color="warning"), []
     
     try:
-        username = session_data.get("username")
+        saved_count = 0
+        updated_count = 0
         
         # For each row in the table
         for row in table_data:
@@ -241,32 +299,40 @@ def save_changes(n_clicks, table_data, login_data):
             # Create a copy of row data without the id field
             row_data = {k: v for k, v in row.items() if k != 'id'}
             
+            # Skip empty rows
+            if not any(str(v).strip() for v in row_data.values()):
+                continue
+            
             # Add metadata
             if doc_id and doc_id.startswith('new_row_'):
                 # This is a newly added row
-                row_data['created_by'] = username
                 row_data['created_at'] = pd.Timestamp.now()
-                doc_ref = db.collection('crime_data').document()
+                doc_ref = db.collection(collection_name).document()
                 doc_ref.set(row_data)
+                saved_count += 1
             elif doc_id:
                 # This is an existing row
-                row_data['updated_by'] = username
                 row_data['updated_at'] = pd.Timestamp.now()
-                doc_ref = db.collection('crime_data').document(doc_id)
+                doc_ref = db.collection(collection_name).document(doc_id)
                 doc_ref.set(row_data, merge=True)
+                updated_count += 1
         
         # Refresh data after saving
-        df = get_all_data()
-        success_msg = dbc.Alert(
-            f"Changes saved successfully by {username}!", 
-            color="success", 
-            dismissable=True
-        )
-        return success_msg, df.to_dict('records')
+        updated_data = get_collection_data(collection_name)
+        df = pd.DataFrame(updated_data) if updated_data else pd.DataFrame()
+        
+        success_msg = dbc.Alert([
+            html.H5("Perubahan berhasil disimpan!", className="alert-heading"),
+            html.P(f"Data baru: {saved_count} baris"),
+            html.P(f"Data diperbarui: {updated_count} baris"),
+            html.P(f"Total data di '{collection_name}': {len(df)} baris")
+        ], color="success", dismissable=True)
+        
+        return success_msg, df.to_dict('records') if not df.empty else []
     
     except Exception as e:
         error_msg = dbc.Alert(
-            f"Error saving changes: {str(e)}", 
+            f"Error menyimpan perubahan: {str(e)}", 
             color="danger", 
             dismissable=True
         )
