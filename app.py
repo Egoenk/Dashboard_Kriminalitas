@@ -7,7 +7,7 @@ from server import app
 # Sidebar layout
 def create_sidebar():
     return html.Div([
-        html.H2("Crime Dashboard", className="display-6 text-primary"),
+        html.H2("Dashboard Kriminalitas", className="display-6 text-primary"),
         html.Hr(),
         dbc.Nav(
             [

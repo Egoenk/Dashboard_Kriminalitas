@@ -60,7 +60,7 @@ layout = html.Div([
                 id='data-collection-dropdown',
                 placeholder="Pilih koleksi dari Firestore...",
                 className="mb-3",
-                value='crime_data'  # Default to crime_data if it exists
+                value='crime_data'
             ),
         ], width=6),
         dbc.Col([
