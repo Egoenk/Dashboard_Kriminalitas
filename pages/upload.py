@@ -1,6 +1,6 @@
 # pages/upload.py
 import dash
-from dash import html, dcc, callback, Input, Output, State
+from dash import html, dcc, callback, Input, Output, State, dash_table
 import dash_bootstrap_components as dbc
 import pandas as pd
 import json
@@ -28,7 +28,22 @@ def convert_value(val):
             return val  # return original string if not a number
     return val  # return original if not a string
 
-def upload_to_firestore(data, collection_name, use_year_as_id=True):
+def clean_field_name(field_name):
+    """Clean field names for better Firestore compatibility"""
+    if not isinstance(field_name, str):
+        field_name = str(field_name)
+    
+    # Remove extra whitespace and convert to title case for consistency
+    cleaned = field_name.strip()
+    
+    # Handle common variations of "Tahun" (Year in Indonesian)
+    tahun_variations = ['tahun', 'Tahun', 'TAHUN', 'year', 'Year', 'YEAR']
+    if cleaned in tahun_variations:
+        return 'Tahun'
+    
+    return cleaned
+
+def upload_to_firestore(data, collection_name):
     """Upload data to Firestore collection"""
     try:
         collection_ref = db.collection(collection_name)
@@ -37,22 +52,34 @@ def upload_to_firestore(data, collection_name, use_year_as_id=True):
         
         for i, record in enumerate(data):
             try:
-                # Convert values to appropriate types
-                converted_record = {k: convert_value(v) for k, v in record.items()}
+                # Clean field names and convert values
+                cleaned_record = {}
+                for key, value in record.items():
+                    clean_key = clean_field_name(key)
+                    clean_value = convert_value(value)
+                    # Skip empty/null values
+                    if clean_value is not None and clean_value != '':
+                        cleaned_record[clean_key] = clean_value
                 
-                if use_year_as_id and "Tahun" in converted_record:
+                # Check for Tahun field (case-insensitive)
+                tahun_value = None
+                for key, value in cleaned_record.items():
+                    if key == 'Tahun':
+                        tahun_value = value
+                        break
+                
+                if tahun_value is not None:
                     # Use 'Tahun' as the document ID
-                    doc_id = str(converted_record["Tahun"])
-                    doc_data = {k: v for k, v in converted_record.items() if k != "Tahun"}
-                    doc_data["Tahun"] = converted_record["Tahun"]  # Keep Tahun in the data
+                    doc_id = str(tahun_value)
+                    # Exclude 'Tahun' from the document data
+                    doc_data = {k: v for k, v in cleaned_record.items() if k != 'Tahun'}
                 else:
                     # Auto-generate document ID
                     doc_id = None
-                    doc_data = converted_record
+                    doc_data = cleaned_record
                 
-                # Add metadata
+                # Add metadata (only created_at)
                 doc_data['created_at'] = pd.Timestamp.now()
-                doc_data['upload_batch'] = pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')
                 
                 if doc_id:
                     collection_ref.document(doc_id).set(doc_data)
@@ -94,15 +121,32 @@ def parse_uploaded_file(contents, filename):
             return data, None
         
         elif filename.endswith('.csv'):
-            # CSV file
-            df = pd.read_csv(io.StringIO(decoded.decode('utf-8')))
-            data = df.to_dict('records')
+            # CSV file with robust parsing
+            df = pd.read_csv(
+                io.StringIO(decoded.decode('utf-8')), 
+                sep=None,  # Auto-detect separator
+                engine='python',  # More flexible parsing
+                skipinitialspace=True,  # Skip whitespace after delimiter
+                na_values=['', 'N/A', 'NULL', 'null', 'NaN'],  # Handle missing values
+                keep_default_na=True
+            )
+            
+            # Clean column names
+            df.columns = df.columns.str.strip()  # Remove leading/trailing whitespace
+            
+            # Convert to records and handle NaN values
+            data = df.where(pd.notnull(df), None).to_dict('records')
             return data, None
         
         elif filename.endswith(('.xlsx', '.xls')):
             # Excel file
             df = pd.read_excel(io.BytesIO(decoded))
-            data = df.to_dict('records')
+            
+            # Clean column names
+            df.columns = df.columns.str.strip()
+            
+            # Convert to records and handle NaN values
+            data = df.where(pd.notnull(df), None).to_dict('records')
             return data, None
         
         else:
@@ -186,10 +230,9 @@ layout = dbc.Container([
                             dbc.Checklist(
                                 id="upload-options",
                                 options=[
-                                    {"label": "Use 'Tahun' as Document ID", "value": "use_year_id"},
                                     {"label": "Overwrite existing data", "value": "overwrite"},
                                 ],
-                                value=["use_year_id"],
+                                value=[],
                                 className="mb-3"
                             )
                         ], width=6)
@@ -341,11 +384,8 @@ def upload_to_firebase(n_clicks, data, dataset_name, options, file_info):
         return ""
     
     try:
-        # Determine upload options
-        use_year_as_id = "use_year_id" in (options or [])
-        
         # Upload to Firestore
-        result = upload_to_firestore(data, dataset_name.strip(), use_year_as_id)
+        result = upload_to_firestore(data, dataset_name.strip())
         
         if result['success']:
             # Success message
@@ -376,6 +416,3 @@ def upload_to_firebase(n_clicks, data, dataset_name, options, file_info):
     except Exception as e:
         logger.error(f"Error in upload callback: {e}")
         return dbc.Alert(f"Unexpected error: {str(e)}", color="danger", dismissable=True)
-
-# Import dash_table at the top
-from dash import dash_table

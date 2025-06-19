@@ -14,7 +14,7 @@ def create_sidebar():
                 dbc.NavLink("Data", href="/data", active="exact"),
                 dbc.NavLink("Upload CSV", href="/upload", active="exact"),
                 dbc.NavLink("Visualisasi", href="/visualisasi", active="exact"),
-                dbc.NavLink("Prediksi", href="/prediksi", active="exact"),
+                dbc.NavLink("Prediksi", href="/prediction", active="exact"),
             ],
             vertical=True,
             pills=True,
@@ -39,7 +39,8 @@ app.layout = html.Div([
 # Main callback to handle page routing
 @callback(
     Output("app-content", "children"),
-    Input("url", "pathname")
+    Input("url", "pathname"),
+    allow_dupolicate=True
 )
 def display_page(pathname):
     sidebar = create_sidebar()
