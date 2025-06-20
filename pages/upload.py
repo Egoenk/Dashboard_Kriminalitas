@@ -41,6 +41,11 @@ def clean_field_name(field_name):
     if cleaned in tahun_variations:
         return 'Tahun'
     
+    # Handle ID variations
+    id_variations = ['id', 'Id', 'ID', 'iD']
+    if cleaned in id_variations:
+        return 'ID'
+    
     return cleaned
 
 def upload_to_firestore(data, collection_name):
@@ -61,22 +66,47 @@ def upload_to_firestore(data, collection_name):
                     if clean_value is not None and clean_value != '':
                         cleaned_record[clean_key] = clean_value
                 
-                # Check for Tahun field (case-insensitive)
-                tahun_value = None
-                for key, value in cleaned_record.items():
-                    if key == 'Tahun':
-                        tahun_value = value
+                # Check for document ID field (look for year/id fields)
+                doc_id = None
+                id_field_name = None
+                
+                # Look for various year/id field patterns (case-insensitive)
+                possible_id_fields = ['Tahun', 'tahun', 'TAHUN', 'Year', 'year', 'YEAR', 
+                                    'ID', 'id', 'Id', 'iD']
+                
+                for field_name in cleaned_record.keys():
+                    # Check exact matches first
+                    if field_name in possible_id_fields:
+                        doc_id = str(cleaned_record[field_name])
+                        id_field_name = field_name
+                        break
+                    
+                    # Check if field contains year/id patterns
+                    field_lower = field_name.lower()
+                    if any(pattern in field_lower for pattern in ['tahun', 'year', 'id']):
+                        doc_id = str(cleaned_record[field_name])
+                        id_field_name = field_name
                         break
                 
-                if tahun_value is not None:
-                    # Use 'Tahun' as the document ID
-                    doc_id = str(tahun_value)
-                    # Exclude 'Tahun' from the document data
-                    doc_data = {k: v for k, v in cleaned_record.items() if k != 'Tahun'}
+                # If no ID field found, look in original record keys (before cleaning)
+                if not doc_id:
+                    for key, value in record.items():
+                        key_lower = str(key).lower().strip()
+                        if key_lower in ['tahun', 'year', 'id'] or 'tahun' in key_lower or 'year' in key_lower:
+                            doc_id = str(convert_value(value))
+                            id_field_name = clean_field_name(key)
+                            break
+                
+                if doc_id and id_field_name:
+                    # Use the found field as document ID
+                    # Remove the ID field from document data to avoid duplication
+                    doc_data = {k: v for k, v in cleaned_record.items() if k != id_field_name}
+                    logger.info(f"Using document ID: {doc_id} from field: {id_field_name}")
                 else:
                     # Auto-generate document ID
                     doc_id = None
                     doc_data = cleaned_record
+                    logger.warning(f"No ID field found in record {i+1}, using auto-generated ID")
                 
                 # Add metadata (only created_at)
                 doc_data['created_at'] = pd.Timestamp.now()
