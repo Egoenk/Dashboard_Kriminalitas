@@ -51,14 +51,14 @@ def format_columns_for_display(data):
     # Get all column names
     all_columns = list(data[0].keys())
     
-    # Define column ordering priority
-    priority_columns = ['tahun', 'year', 'tanggal', 'date']
+    # Define column ordering priority (tahun only)
+    priority_columns = ['tahun']
     
     # Separate columns by priority
     ordered_columns = []
     remaining_columns = all_columns.copy()
     
-    # Add priority columns first (tahun/year at leftmost)
+    # Add priority columns first (tahun at leftmost)
     for priority in priority_columns:
         for col in all_columns:
             if col.lower() == priority and col in remaining_columns:
@@ -171,7 +171,7 @@ layout = html.Div([
                           color="success", className="me-2", disabled=True),
                 dbc.Button("Save Changes", id="save-changes-button", 
                           color="warning", className="me-2", disabled=True),
-            ],ClassName="mb-3")
+            ], className="mb-3")
         ], width=6)
     ]),
     
@@ -236,9 +236,9 @@ layout = html.Div([
                                 'textAlign': 'right',
                                 'paddingRight': '20px'
                             },
-                            # Style for year/tahun columns
+                            # Style for tahun column
                             {
-                                'if': {'column_id': ['tahun', 'year']},
+                                'if': {'column_id': 'tahun'},
                                 'backgroundColor': '#e3f2fd',
                                 'fontWeight': 'bold'
                             }
