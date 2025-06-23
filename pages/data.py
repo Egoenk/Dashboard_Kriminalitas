@@ -11,17 +11,17 @@ dash.register_page(__name__, path="/data", name="Data")
 logger = logging.getLogger(__name__)
 
 def get_firestore_collections():
-    """Get all collection names from Firestore"""
+    """Ambil semua collection di database"""
     try:
         collections = db.collections()
         collection_names = [col.id for col in collections]
         return collection_names
     except Exception as e:
-        logger.error(f"Error getting collections: {e}")
+        logger.error(f"Error dalam mengambil 'collections': {e}")
         return []
 
 def get_collection_data(collection_name):
-    """Get data from a specific Firestore collection"""
+    """Ambil data dari collection"""
     try:
         docs = db.collection(collection_name).stream()
         data = []
@@ -31,34 +31,31 @@ def get_collection_data(collection_name):
             data.append(doc_data)
         return data
     except Exception as e:
-        logger.error(f"Error getting data from collection {collection_name}: {e}")
+        logger.error(f"Error dalam mengambil data dari collection {collection_name}: {e}")
         return []
 
 def get_all_data(collection_name='crime_data'):
-    """Get data from specified collection"""
+    """Ambil data dari collection tertentu"""
     try:
         data = get_collection_data(collection_name)
         return pd.DataFrame(data) if data else pd.DataFrame()
     except Exception as e:
-        logger.error(f"Error fetching data: {e}")
+        logger.error(f"Error mengambil data: {e}")
         return pd.DataFrame()
 
 def format_columns_for_display(data):
-    """Format columns with proper ordering and data types"""
+    """Formatting"""
     if not data:
         return [], []
     
-    # Get all column names
     all_columns = list(data[0].keys())
     
-    # Define column ordering priority (tahun only)
     priority_columns = ['tahun']
     
     # Separate columns by priority
     ordered_columns = []
     remaining_columns = all_columns.copy()
     
-    # Add priority columns first (tahun at leftmost)
     for priority in priority_columns:
         for col in all_columns:
             if col.lower() == priority and col in remaining_columns:
@@ -66,18 +63,14 @@ def format_columns_for_display(data):
                 remaining_columns.remove(col)
                 break
     
-    # Add ID column after priority columns but before others
     if 'id' in remaining_columns:
         ordered_columns.append('id')
         remaining_columns.remove('id')
     
-    # Add remaining columns
     ordered_columns.extend(remaining_columns)
     
-    # Create column definitions with proper formatting
     columns = []
     for col in ordered_columns:
-        # Determine column type and formatting
         sample_values = [row.get(col) for row in data[:5] if row.get(col) is not None]
         
         column_def = {
@@ -86,15 +79,12 @@ def format_columns_for_display(data):
             "deletable": False
         }
         
-        # Set editability
         if col == 'id':
             column_def["editable"] = False
         else:
             column_def["editable"] = True
         
-        # Determine data type and formatting
         if sample_values:
-            # Check if column contains numeric data
             numeric_values = []
             for val in sample_values:
                 try:
@@ -104,7 +94,6 @@ def format_columns_for_display(data):
                     pass
             
             if len(numeric_values) > 0:
-                # Check if values are percentages (between 0 and 1 or contain %)
                 is_percentage = (
                     any(0 <= val <= 1 for val in numeric_values if val != 0) or
                     any(str(val).endswith('%') for val in sample_values)
@@ -118,7 +107,6 @@ def format_columns_for_display(data):
                         }
                     })
                 else:
-                    # Use thousand separator for regular numbers
                     column_def.update({
                         "type": "numeric",
                         "format": {
@@ -132,7 +120,6 @@ def format_columns_for_display(data):
         
         columns.append(column_def)
     
-    # Reorder data to match column order
     reordered_data = []
     for row in data:
         new_row = {}
@@ -147,7 +134,7 @@ layout = html.Div([
     # Page header
     dbc.Row([
         dbc.Col([
-            html.H2("Data Management", className="mb-4"),
+            html.H2("Managemen Data", className="mb-4"),
         ])
     ]),
     
@@ -163,13 +150,13 @@ layout = html.Div([
             ),
         ], width=6),
         dbc.Col([
-            html.Label("Actions:", className="fw-bold mb-2"),
+            html.Label("Aksi:", className="fw-bold mb-2"),
             html.Div([
-                dbc.Button("Load Data", id="load-data-button", 
+                dbc.Button("Muat Data", id="load-data-button", 
                           color="info", className="me-2"),
-                dbc.Button("Add New Row", id="add-row-button", 
+                dbc.Button("Tambah Baris Baru", id="add-row-button", 
                           color="success", className="me-2", disabled=True),
-                dbc.Button("Save Changes", id="save-changes-button", 
+                dbc.Button("Simpan Perubahan", id="save-changes-button", 
                           color="warning", className="me-2", disabled=True),
             ], className="mb-3")
         ], width=6)
@@ -290,7 +277,7 @@ def update_collection_options(_):
     Input('data-collection-dropdown', 'value')
 )
 def enable_buttons(collection_name):
-    """Enable buttons when collection is selected"""
+    """Button nyala setelah memilih koleksi"""
     disabled = collection_name is None
     return False, collection_name  # Always enable Load Data button
 

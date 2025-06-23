@@ -234,11 +234,11 @@ layout = dbc.Container([
     dbc.Row([
         dbc.Col([
             dbc.Card([
-                dbc.CardHeader(html.H4("Model & Data Selection", className="mb-0")),
+                dbc.CardHeader(html.H4("Pilih Model & Data", className="mb-0")),
                 dbc.CardBody([
                     dbc.Row([
                         dbc.Col([
-                            dbc.Label("Select Prediction Model:"),
+                            dbc.Label("Pilih Model Prediksi:"),
                             dcc.Dropdown(
                                 id="model-dropdown",
                                 options=[
@@ -251,7 +251,7 @@ layout = dbc.Container([
                             html.Div(id="model-description", className="mb-3")
                         ], width=6),
                         dbc.Col([
-                            dbc.Label("Select Data Collection:"),
+                            dbc.Label("Pilih Collection Data:"),
                             dcc.Dropdown(
                                 id="collection-dropdown-prediction",
                                 placeholder="Select a collection...",
@@ -271,7 +271,7 @@ layout = dbc.Container([
                         ], width=6),
                     ]),
                     
-                    dbc.Button("Train Model", id="train-button", color="primary", className="w-100", disabled=True),
+                    dbc.Button("Latih Model", id="train-button", color="primary", className="w-100", disabled=True),
                     
                     # Store components
                     dcc.Store(id="model-store"),
@@ -285,7 +285,7 @@ layout = dbc.Container([
     dbc.Row([
         dbc.Col([
             dbc.Card([
-                dbc.CardHeader(html.H4("Model Performance Metrics", className="mb-0")),
+                dbc.CardHeader(html.H4("Matriks Performa Model", className="mb-0")),
                 dbc.CardBody([
                     html.Div(id="metrics-content", className="mb-3")
                 ])

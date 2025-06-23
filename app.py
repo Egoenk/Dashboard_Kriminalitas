@@ -11,10 +11,11 @@ def create_sidebar():
         html.Hr(),
         dbc.Nav(
             [
-                dbc.NavLink("Data", href="/data", active="exact"),
-                dbc.NavLink("Upload CSV", href="/upload", active="exact"),
-                dbc.NavLink("Visualisasi", href="/visualisasi", active="exact"),
-                dbc.NavLink("Prediksi", href="/prediction", active="exact"),
+                dbc.NavLink("1. Upload CSV", href="/upload", active="exact"),
+                dbc.NavLink("2. Lihat Data", href="/data", active="exact"),
+                dbc.NavLink("3. Visualisasi Data", href="/visualisasi", active="exact"),
+                dbc.NavLink("4. Augmentasi Data", href="/augmentation", active="exact"),
+                dbc.NavLink("5. Prediksi Data", href="/prediction", active="exact"),
             ],
             vertical=True,
             pills=True,
