@@ -1,4 +1,3 @@
-# pages/data.py - Enhanced with better formatting and presentation
 import dash
 from dash import html, dcc, dash_table, Input, Output, State, callback
 import dash_bootstrap_components as dbc
@@ -27,107 +26,141 @@ def get_collection_data(collection_name):
         data = []
         for doc in docs:
             doc_data = doc.to_dict()
-            doc_data['id'] = doc.id  # Add document ID
+            doc_data['id'] = doc.id
             data.append(doc_data)
         return data
     except Exception as e:
         logger.error(f"Error dalam mengambil data dari collection {collection_name}: {e}")
         return []
 
-def get_all_data(collection_name='crime_data'):
-    """Ambil data dari collection tertentu"""
-    try:
-        data = get_collection_data(collection_name)
-        return pd.DataFrame(data) if data else pd.DataFrame()
-    except Exception as e:
-        logger.error(f"Error mengambil data: {e}")
-        return pd.DataFrame()
-
 def format_columns_for_display(data):
-    """Formatting"""
+    """Formatting columns with specific order and formatting rules"""
     if not data:
         return [], []
     
-    all_columns = list(data[0].keys())
+    # 1. Define our strict column order
+    priority_columns = ['tahun', 'source']  # Always first two if present
+    mandatory_end_column = 'created_at'  # Always last if present
     
-    priority_columns = ['tahun']
+    # 2. Get all available columns (excluding internal 'id')
+    available_columns = [col for col in data[0].keys() if col != 'id']
     
-    # Separate columns by priority
-    ordered_columns = []
-    remaining_columns = all_columns.copy()
+    # 3. Build the final column order
+    final_order = []
     
-    for priority in priority_columns:
-        for col in all_columns:
-            if col.lower() == priority and col in remaining_columns:
-                ordered_columns.append(col)
-                remaining_columns.remove(col)
-                break
+    # Add priority columns first (if they exist)
+    for col in priority_columns:
+        if col in available_columns:
+            final_order.append(col)
     
-    if 'id' in remaining_columns:
-        ordered_columns.append('id')
-        remaining_columns.remove('id')
+    # Add remaining columns (excluding already added and created_at)
+    remaining_columns = [
+        col for col in available_columns 
+        if col not in final_order and col != mandatory_end_column
+    ]
+    final_order.extend(sorted(remaining_columns))
     
-    ordered_columns.extend(remaining_columns)
+    # Add created_at at the end if it exists
+    if mandatory_end_column in available_columns:
+        final_order.append(mandatory_end_column)
     
     columns = []
-    for col in ordered_columns:
-        sample_values = [row.get(col) for row in data[:5] if row.get(col) is not None]
-        
+    for col in final_order:
         column_def = {
             "name": col.replace('_', ' ').title(),
             "id": col,
-            "deletable": False
+            "deletable": False,
+            "editable": True if col != mandatory_end_column else False
         }
         
-        if col == 'id':
-            column_def["editable"] = False
-        else:
-            column_def["editable"] = True
+        # SPECIAL FORMATTING RULES:
         
-        if sample_values:
-            numeric_values = []
-            for val in sample_values:
-                try:
-                    numeric_val = float(val)
-                    numeric_values.append(numeric_val)
-                except (ValueError, TypeError):
-                    pass
+        # 1. Tahun - plain number with no formatting
+        if col == 'tahun':
+            column_def.update({
+                "type": "numeric",
+                "format": {
+                    "specifier": "f",
+                    "group": ""  # Disable all grouping
+                }
+            })
+        
+        # 2. Numeric columns (check first 10 rows for numeric values)
+        elif any(isinstance(row.get(col), (int, float)) and not isinstance(row.get(col), bool)
+               for row in data[:10] if row.get(col) is not None):
             
-            if len(numeric_values) > 0:
-                is_percentage = (
-                    any(0 <= val <= 1 for val in numeric_values if val != 0) or
-                    any(str(val).endswith('%') for val in sample_values)
-                )
-                
-                if is_percentage:
-                    column_def.update({
-                        "type": "numeric",
-                        "format": {
-                            "specifier": ".2%"
-                        }
-                    })
-                else:
-                    column_def.update({
-                        "type": "numeric",
-                        "format": {
-                            "specifier": ",.0f"
-                        }
-                    })
+            # Check if values have decimals
+            has_decimals = any(
+                isinstance(row.get(col), float) and not row.get(col).is_integer()
+                for row in data[:10] if row.get(col) is not None
+            )
+            
+            if has_decimals:
+                # Decimal numbers: 1.234,56 format
+                column_def.update({
+                    "type": "numeric",
+                    "format": {
+                        "locale": {
+                            "decimal": ",",
+                            "group": "."
+                        },
+                        "specifier": ",.2f"  # 2 decimal places
+                    }
+                })
             else:
-                column_def["type"] = "text"
+                # Whole numbers: 1.234 format
+                column_def.update({
+                    "type": "numeric",
+                    "format": {
+                        "locale": {
+                            "decimal": "",
+                            "group": "."
+                        },
+                        "specifier": ",.0f"
+                    }
+                })
         else:
             column_def["type"] = "text"
         
         columns.append(column_def)
     
+    # Reorder the data according to our column order
     reordered_data = []
     for row in data:
         new_row = {}
-        for col in ordered_columns:
-            new_row[col] = row.get(col, "")
+        for col in final_order:
+            new_row[col] = row.get(col)
         reordered_data.append(new_row)
     
     return reordered_data, columns
+
+# Confirmation modal for save changes
+save_confirm_modal = dbc.Modal(
+    [
+        dbc.ModalHeader("Konfirmasi Simpan Perubahan"),
+        dbc.ModalBody("Anda yakin ingin menyimpan perubahan ke database?"),
+        dbc.ModalFooter([
+            dbc.Button("Batal", id="cancel-save", className="ms-auto"),
+            dbc.Button("Simpan", id="confirm-save", color="primary"),
+        ]),
+    ],
+    id="save-confirm-modal",
+    centered=True,
+)
+
+# Confirmation modal for delete collection
+delete_confirm_modal = dbc.Modal(
+    [
+        dbc.ModalHeader("Konfirmasi Hapus Koleksi"),
+        dbc.ModalBody("Anda yakin ingin menghapus koleksi ini? Data tidak dapat dikembalikan!"),
+        dbc.ModalFooter([
+            dbc.Button("Batal", id="cancel-delete", className="ms-auto"),
+            dbc.Button("Hapus", id="confirm-delete", color="danger"),
+        ]),
+    ],
+    id="delete-confirm-modal",
+    centered=True,
+)
 
 # Layout for the data page
 layout = html.Div([
@@ -158,6 +191,8 @@ layout = html.Div([
                           color="success", className="me-2", disabled=True),
                 dbc.Button("Simpan Perubahan", id="save-changes-button", 
                           color="warning", className="me-2", disabled=True),
+                dbc.Button("Hapus Koleksi", id="delete-collection-button", 
+                          color="danger", className="me-2", disabled=True),
             ], className="mb-3")
         ], width=6)
     ]),
@@ -230,15 +265,10 @@ layout = html.Div([
                                 'fontWeight': 'bold'
                             }
                         ],
-                        # Custom CSS for delete button positioning
                         css=[
                             {
                                 'selector': '.dash-table-container .dash-spreadsheet-container .dash-spreadsheet-inner table',
                                 'rule': 'table-layout: auto;'
-                            },
-                            {
-                                'selector': '.dash-table-container .dash-spreadsheet-container .dash-spreadsheet-inner .dash-spreadsheet-inner .row-delete-button',
-                                'rule': 'order: -1; margin-right: 10px;'
                             }
                         ],
                         data=[],
@@ -253,6 +283,10 @@ layout = html.Div([
     # Store components for data
     dcc.Store(id="table-data-store"),
     dcc.Store(id="selected-collection-store"),
+    
+    # Confirmation modals
+    save_confirm_modal,
+    delete_confirm_modal
 ])
 
 # Callback to populate collection dropdown
@@ -273,13 +307,14 @@ def update_collection_options(_):
 # Callback to enable/disable buttons based on collection selection
 @callback(
     [Output('load-data-button', 'disabled'),
+     Output('delete-collection-button', 'disabled'),
      Output('selected-collection-store', 'data')],
     Input('data-collection-dropdown', 'value')
 )
 def enable_buttons(collection_name):
     """Button nyala setelah memilih koleksi"""
     disabled = collection_name is None
-    return False, collection_name  # Always enable Load Data button
+    return False, disabled, collection_name
 
 # Callback to load data from selected collection
 @callback(
@@ -305,20 +340,19 @@ def load_data(n_clicks, collection_name):
             )
             return [], status_msg, "", True, True
         
-        df = pd.DataFrame(data)
-        
         # Create status message
         status_msg = dbc.Alert(
-            f"Berhasil memuat {len(df)} baris data dari koleksi '{collection_name}'", 
+            f"Berhasil memuat {len(data)} baris data dari koleksi '{collection_name}'", 
             color="success"
         )
         
         # Create info about the data
+        columns = list(data[0].keys()) if data else []
         info_content = [
             html.H5("Informasi Data:", className="mb-2"),
-            html.P(f"Jumlah baris: {len(df):,}"),
-            html.P(f"Jumlah kolom: {len(df.columns)}"),
-            html.P(f"Kolom tersedia: {', '.join(df.columns.tolist())}")
+            html.P(f"Jumlah baris: {len(data):,}"),
+            html.P(f"Jumlah kolom: {len(columns)}"),
+            html.P(f"Kolom tersedia: {', '.join([col for col in columns if col != 'id'])}")
         ]
         info_div = dbc.Card(
             dbc.CardBody(info_content),
@@ -326,7 +360,7 @@ def load_data(n_clicks, collection_name):
             className="mb-3"
         )
         
-        return df.to_dict('records'), status_msg, info_div, False, False
+        return data, status_msg, info_div, False, False
         
     except Exception as e:
         error_msg = dbc.Alert(f"Error memuat data: {str(e)}", color="danger")
@@ -340,7 +374,6 @@ def load_data(n_clicks, collection_name):
 )
 def update_table(data):
     if not data:
-        # Return empty table
         return [], []
     
     # Format columns with proper ordering and formatting
@@ -362,74 +395,134 @@ def add_row(n_clicks, current_data, collection_name):
     
     if not current_data:
         # If no data yet, create a basic structure
-        return [{"id": "new_row_1", "field1": "", "field2": "", "field3": ""}]
+        return [{"tahun": "", "source": "", "created_at": ""}]
     
-    # Create a new row with the same columns as existing data
-    new_row = {key: "" for key in current_data[0].keys()}
-    new_row["id"] = f"new_row_{n_clicks}"  # Temporary ID until saved
+    # Create a new row with the same columns as existing data (excluding id)
+    new_row = {key: "" for key in current_data[0].keys() if key != 'id'}
+    new_row["created_at"] = pd.Timestamp.now().strftime("%Y-%m-%d %H:%M:%S")
     current_data.append(new_row)
     return current_data
 
-# Callback to save changes
+# Callback to show save confirmation modal
+@callback(
+    Output("save-confirm-modal", "is_open"),
+    [Input("save-changes-button", "n_clicks"),
+     Input("confirm-save", "n_clicks"),
+     Input("cancel-save", "n_clicks")],
+    State("save-confirm-modal", "is_open")
+)
+def toggle_save_modal(n1, n2, n3, is_open):
+    if n1 or n2 or n3:
+        return not is_open
+    return is_open
+
+# Callback to show delete confirmation modal
+@callback(
+    Output("delete-confirm-modal", "is_open"),
+    [Input("delete-collection-button", "n_clicks"),
+     Input("confirm-delete", "n_clicks"),
+     Input("cancel-delete", "n_clicks")],
+    State("delete-confirm-modal", "is_open")
+)
+def toggle_delete_modal(n1, n2, n3, is_open):
+    if n1 or n2 or n3:
+        return not is_open
+    return is_open
+
+# Combined callback for both save and delete operations
 @callback(
     [Output("data-status-message", "children", allow_duplicate=True),
-     Output("table-data-store", "data", allow_duplicate=True)],
-    Input("save-changes-button", "n_clicks"),
+     Output("table-data-store", "data", allow_duplicate=True),
+     Output("data-collection-dropdown", "options", allow_duplicate=True)],
+    [Input("confirm-save", "n_clicks"),
+     Input("confirm-delete", "n_clicks")],
     [State("firebase-data-table", "data"),
-     State("selected-collection-store", "data")],
+     State("selected-collection-store", "data"),
+     State("data-collection-dropdown", "options")],
     prevent_initial_call=True
 )
-def save_changes(n_clicks, table_data, collection_name):
-    if not table_data or not collection_name:
-        return dbc.Alert("Tidak ada data untuk disimpan", color="warning"), []
+def handle_data_operations(save_clicks, delete_clicks, table_data, collection_name, current_options):
+    ctx = dash.callback_context
     
-    try:
-        saved_count = 0
-        updated_count = 0
-        
-        # For each row in the table
-        for row in table_data:
-            # Get the document ID
-            doc_id = row.get('id', None)
-            
-            # Create a copy of row data without the id field
-            row_data = {k: v for k, v in row.items() if k != 'id'}
-            
-            # Skip empty rows
-            if not any(str(v).strip() for v in row_data.values()):
-                continue
-            
-            # Add metadata
-            if doc_id and doc_id.startswith('new_row_'):
-                # This is a newly added row
-                row_data['created_at'] = pd.Timestamp.now()
-                doc_ref = db.collection(collection_name).document()
-                doc_ref.set(row_data)
-                saved_count += 1
-            elif doc_id:
-                # This is an existing row
-                row_data['updated_at'] = pd.Timestamp.now()
-                doc_ref = db.collection(collection_name).document(doc_id)
-                doc_ref.set(row_data, merge=True)
-                updated_count += 1
-        
-        # Refresh data after saving
-        updated_data = get_collection_data(collection_name)
-        df = pd.DataFrame(updated_data) if updated_data else pd.DataFrame()
-        
-        success_msg = dbc.Alert([
-            html.H5("Perubahan berhasil disimpan!", className="alert-heading"),
-            html.P(f"Data baru: {saved_count:,} baris"),
-            html.P(f"Data diperbarui: {updated_count:,} baris"),
-            html.P(f"Total data di '{collection_name}': {len(df):,} baris")
-        ], color="success", dismissable=True)
-        
-        return success_msg, df.to_dict('records') if not df.empty else []
+    if not ctx.triggered:
+        return dash.no_update, dash.no_update, dash.no_update
     
-    except Exception as e:
-        error_msg = dbc.Alert(
-            f"Error menyimpan perubahan: {str(e)}", 
-            color="danger", 
-            dismissable=True
-        )
-        return error_msg, table_data or []
+    triggered_id = ctx.triggered[0]['prop_id'].split('.')[0]
+    
+    if triggered_id == "confirm-save":
+        if not table_data or not collection_name:
+            return dbc.Alert("Tidak ada data untuk disimpan", color="warning"), [], current_options
+        
+        try:
+            saved_count = 0
+            updated_count = 0
+            
+            for row in table_data:
+                doc_id = None
+                if 'id' in row:
+                    doc_id = row['id']
+                    del row['id']
+                
+                if not any(str(v).strip() for v in row.values()):
+                    continue
+                
+                if doc_id:
+                    row['updated_at'] = pd.Timestamp.now().strftime("%Y-%m-%d %H:%M:%S")
+                    doc_ref = db.collection(collection_name).document(doc_id)
+                    doc_ref.set(row, merge=True)
+                    updated_count += 1
+                else:
+                    row['created_at'] = pd.Timestamp.now().strftime("%Y-%m-%d %H:%M:%S")
+                    doc_ref = db.collection(collection_name).document()
+                    doc_ref.set(row)
+                    saved_count += 1
+            
+            updated_data = get_collection_data(collection_name)
+            
+            success_msg = dbc.Alert([
+                html.H5("Perubahan berhasil disimpan!", className="alert-heading"),
+                html.P(f"Data baru: {saved_count:,} baris"),
+                html.P(f"Data diperbarui: {updated_count:,} baris"),
+                html.P(f"Total data di '{collection_name}': {len(updated_data):,} baris")
+            ], color="success", dismissable=True)
+            
+            return success_msg, updated_data, dash.no_update
+            
+        except Exception as e:
+            error_msg = dbc.Alert(
+                f"Error menyimpan perubahan: {str(e)}", 
+                color="danger", 
+                dismissable=True
+            )
+            return error_msg, table_data or [], current_options
+    
+    elif triggered_id == "confirm-delete":
+        if not collection_name:
+            return dbc.Alert("Tidak ada koleksi yang dipilih", color="warning"), [], current_options
+        
+        try:
+            docs = db.collection(collection_name).stream()
+            deleted_count = 0
+            for doc in docs:
+                doc.reference.delete()
+                deleted_count += 1
+            
+            updated_options = [opt for opt in current_options if opt['value'] != collection_name]
+            
+            success_msg = dbc.Alert([
+                html.H5("Koleksi berhasil dihapus!", className="alert-heading"),
+                html.P(f"Koleksi '{collection_name}' telah dihapus"),
+                html.P(f"Dokumen yang dihapus: {deleted_count:,}")
+            ], color="success", dismissable=True)
+            
+            return success_msg, [], updated_options
+        
+        except Exception as e:
+            error_msg = dbc.Alert(
+                f"Error menghapus koleksi: {str(e)}", 
+                color="danger", 
+                dismissable=True
+            )
+            return error_msg, [], current_options
+    
+    return dash.no_update, dash.no_update, dash.no_update

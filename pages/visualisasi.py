@@ -61,13 +61,8 @@ layout = dbc.Container([
                 options=[
                     {'label': 'Bar Chart', 'value': 'bar'},
                     {'label': 'Line Chart', 'value': 'line'},
-                    {'label': 'Scatter Plot', 'value': 'scatter'},
-                    {'label': 'Box Plot', 'value': 'box'},
-                    {'label': 'Histogram', 'value': 'histogram'},
                     {'label': 'Pie Chart', 'value': 'pie'},
-                    {'label': 'Area Chart', 'value': 'area'},
-                    {'label': 'Heatmap', 'value': 'heatmap'},
-                    {'label': 'Violin Plot', 'value': 'violin'}
+                    {'label': 'Histogram', 'value': 'histogram'}
                 ],
                 value='bar',
                 className="mb-3"
@@ -82,14 +77,6 @@ layout = dbc.Container([
                 disabled=True
             ),
         ], width=4)
-    ]),
-    
-    # Filter Section
-    dbc.Row([
-        dbc.Col([
-            html.H5("Filter Data", className="fw-bold mb-3"),
-            html.Div(id="filter-controls", className="mb-3"),
-        ], width=12)
     ]),
     
     dbc.Row([
@@ -153,105 +140,54 @@ def enable_controls(collection_name):
     return is_disabled, is_disabled
 
 @callback(
-    [Output('variable-dropdown', 'options'),
-     Output('filter-controls', 'children')],
+    Output('variable-dropdown', 'options'),
     [Input('collection-dropdown', 'value')]
 )
-def update_variable_options_and_filters(collection_name):
-    """Update variable options and create filter controls"""
+def update_variable_options(collection_name):
+    """Update variable options based on selected collection"""
     if not collection_name:
-        return [], []
+        return []
     
     try:
         # Get sample data to determine available columns
         data = get_collection_data(collection_name)
         if not data:
-            return [], []
+            return []
         
         df = pd.DataFrame(data)
         
-        # Variable options (numeric columns)
-        numeric_cols = df.select_dtypes(include=['number']).columns.tolist()
-        categorical_cols = df.select_dtypes(include=['object', 'category']).columns.tolist()
+        # Variable options (focus on crime-related variables)
+        options = []
         
-        variable_options = []
-        for col in numeric_cols:
-            variable_options.append({'label': f"{col} (Numeric)", 'value': col})
-        for col in categorical_cols:
-            variable_options.append({'label': f"{col} (Categorical)", 'value': col})
+        # Prioritize common crime-related columns
+        priority_columns = ['jumlah_kasus', 'total_kasus', 'kasus', 'tahun', 'jenis_kejahatan', 
+                           'lokasi', 'kategori', 'kecamatan', 'kelurahan']
         
-        # Create filter controls
-        filter_controls = []
+        for col in df.columns:
+            # Skip document ID and non-relevant columns
+            if col.lower() in ['id', 'timestamp', 'created_at', 'updated_at']:
+                continue
+                
+            # Add priority columns first
+            if col.lower() in priority_columns:
+                if df[col].dtype in ['object', 'category']:
+                    options.append({'label': f"{col} (Kategorikal)", 'value': col})
+                else:
+                    options.append({'label': f"{col} (Numerik)", 'value': col})
         
-        # Numeric filters
-        for col in numeric_cols:
-            if col in df.columns and not df[col].isna().all():
-                try:
-                    min_val = float(df[col].min())
-                    max_val = float(df[col].max())
-                    
-                    # Skip if min and max are the same
-                    if min_val == max_val:
-                        continue
-                        
-                    filter_controls.append(
-                        dbc.Row([
-                            dbc.Col([
-                                html.Label(f"Filter {col}:", className="fw-bold"),
-                                dcc.RangeSlider(
-                                    id={'type': 'range-filter', 'index': col},
-                                    min=min_val,
-                                    max=max_val,
-                                    value=[min_val, max_val],
-                                    marks={
-                                        min_val: {'label': f'{min_val:.1f}', 'style': {'fontSize': '10px'}},
-                                        max_val: {'label': f'{max_val:.1f}', 'style': {'fontSize': '10px'}}
-                                    },
-                                    tooltip={"placement": "bottom", "always_visible": True}
-                                )
-                            ], width=6)
-                        ], className="mb-3")
-                    )
-                except (ValueError, TypeError):
-                    # Skip columns that can't be converted to numeric
-                    continue
+        # Add remaining columns
+        for col in df.columns:
+            if col not in [opt['value'] for opt in options] and col.lower() not in ['id', 'timestamp']:
+                if df[col].dtype in ['object', 'category']:
+                    options.append({'label': f"{col} (Kategorikal)", 'value': col})
+                else:
+                    options.append({'label': f"{col} (Numerik)", 'value': col})
         
-        # Categorical filters
-        for col in categorical_cols:
-            if col in df.columns and not df[col].isna().all():
-                try:
-                    unique_values = [str(val) for val in df[col].dropna().unique().tolist()]
-                    if len(unique_values) > 20:  # Limit options for performance
-                        unique_values = unique_values[:20]
-                    
-                    filter_controls.append(
-                        dbc.Row([
-                            dbc.Col([
-                                html.Label(f"Filter {col}:", className="fw-bold"),
-                                dcc.Dropdown(
-                                    id={'type': 'dropdown-filter', 'index': col},
-                                    options=[{'label': val, 'value': val} for val in unique_values],
-                                    value=unique_values,
-                                    multi=True,
-                                    placeholder=f"Pilih {col}..."
-                                )
-                            ], width=6)
-                        ], className="mb-3")
-                    )
-                except Exception:
-                    # Skip problematic columns
-                    continue
-        
-        if not filter_controls:
-            filter_controls = [
-                dbc.Alert("Tidak ada filter yang tersedia untuk data ini.", color="info", className="mb-3")
-            ]
-        
-        return variable_options, filter_controls
+        return options
         
     except Exception as e:
         logger.error(f"Error updating variable options: {e}")
-        return [], [dbc.Alert(f"Error loading filters: {str(e)}", color="danger")]
+        return []
 
 @callback(
     [Output('charts-container', 'children'),
@@ -260,15 +196,10 @@ def update_variable_options_and_filters(collection_name):
     [Input('load-data-btn', 'n_clicks')],
     [State('collection-dropdown', 'value'),
      State('chart-type-dropdown', 'value'),
-     State('variable-dropdown', 'value'),
-     State({'type': 'range-filter', 'index': dash.dependencies.ALL}, 'value'),
-     State({'type': 'dropdown-filter', 'index': dash.dependencies.ALL}, 'value'),
-     State({'type': 'range-filter', 'index': dash.dependencies.ALL}, 'id'),
-     State({'type': 'dropdown-filter', 'index': dash.dependencies.ALL}, 'id')]
+     State('variable-dropdown', 'value')]
 )
-def update_visualizations(n_clicks, collection_name, chart_type, selected_variable, 
-                         range_values, dropdown_values, range_ids, dropdown_ids):
-    """Update visualizations based on selected options and filters"""
+def update_visualizations(n_clicks, collection_name, chart_type, selected_variable):
+    """Update visualizations based on selected options"""
     if not n_clicks or not collection_name or not selected_variable:
         return [], [], ""
     
@@ -282,22 +213,23 @@ def update_visualizations(n_clicks, collection_name, chart_type, selected_variab
         # Convert to DataFrame
         df = pd.DataFrame(raw_data)
         
-        # Apply filters
-        filtered_df = apply_dynamic_filters(df, range_values, dropdown_values, range_ids, dropdown_ids)
+        # Clean data - convert 'tahun' to numeric if exists
+        if 'tahun' in df.columns:
+            df['tahun'] = pd.to_numeric(df['tahun'], errors='coerce')
+            df = df.dropna(subset=['tahun'])
+            df['tahun'] = df['tahun'].astype(int)
         
         # Status message
-        rows_filtered = len(df) - len(filtered_df)
         status_msg = dbc.Alert(
-            f"Berhasil memuat {len(filtered_df)} baris data dari koleksi '{collection_name}'" + 
-            (f" ({rows_filtered} baris difilter)" if rows_filtered > 0 else ""), 
+            f"Berhasil memuat {len(df)} baris data dari koleksi '{collection_name}'", 
             color="success"
         )
         
         # Create visualization
-        chart = create_chart(filtered_df, chart_type, selected_variable, collection_name)
+        chart = create_chart(df, chart_type, selected_variable, collection_name)
         
         # Create data table
-        table = create_data_table(filtered_df)
+        table = create_data_table(df)
         
         return [chart], table, status_msg
         
@@ -305,36 +237,6 @@ def update_visualizations(n_clicks, collection_name, chart_type, selected_variab
         logger.error(f"Error updating visualizations: {e}")
         error_msg = dbc.Alert(f"Error: {str(e)}", color="danger")
         return [], [], error_msg
-
-def apply_dynamic_filters(df, range_values, dropdown_values, range_ids, dropdown_ids):
-    """Apply dynamic filters to the dataframe"""
-    filtered_df = df.copy()
-    
-    try:
-        # Apply range filters
-        for i, (filter_range, filter_id) in enumerate(zip(range_values, range_ids)):
-            if filter_range and len(filter_range) == 2:
-                column_name = filter_id['index']
-                if column_name in filtered_df.columns:
-                    min_val, max_val = filter_range
-                    filtered_df = filtered_df[
-                        (filtered_df[column_name] >= min_val) & 
-                        (filtered_df[column_name] <= max_val)
-                    ]
-        
-        # Apply dropdown filters
-        for i, (filter_values, filter_id) in enumerate(zip(dropdown_values, dropdown_ids)):
-            if filter_values:
-                column_name = filter_id['index']
-                if column_name in filtered_df.columns:
-                    filtered_df = filtered_df[filtered_df[column_name].isin(filter_values)]
-        
-    except Exception as e:
-        logger.error(f"Error applying filters: {e}")
-        # Return original dataframe if filtering fails
-        return df
-    
-    return filtered_df
 
 def create_chart(df, chart_type, variable, collection_name):
     """Create a single chart based on the selected type and variable"""
@@ -354,88 +256,70 @@ def create_chart(df, chart_type, variable, collection_name):
         
         if chart_type == 'bar':
             if df_clean[variable].dtype in ['object', 'category']:
-                # Categorical bar chart
-                value_counts = df_clean[variable].value_counts()
-                fig = px.bar(x=value_counts.index, y=value_counts.values,
-                           title=f'Bar Chart - {variable}',
-                           labels={'x': variable, 'y': 'Count'})
+                # Group by year if available
+                if 'tahun' in df_clean.columns:
+                    grouped = df_clean.groupby(['tahun', variable]).size().reset_index(name='count')
+                    fig = px.bar(grouped, x='tahun', y='count', color=variable,
+                               title=f'Kasus Kriminal per Tahun - {variable}',
+                               labels={'tahun': 'Tahun', 'count': 'Jumlah Kasus'})
+                else:
+                    value_counts = df_clean[variable].value_counts()
+                    fig = px.bar(x=value_counts.index, y=value_counts.values,
+                               title=f'Bar Chart - {variable}',
+                               labels={'x': variable, 'y': 'Count'})
             else:
-                # Numeric bar chart (binned)
-                fig = px.histogram(df_clean, x=variable, 
-                                 title=f'Bar Chart - {variable}')
+                # Numeric bar chart (group by year if available)
+                if 'tahun' in df_clean.columns:
+                    grouped = df_clean.groupby('tahun')[variable].sum().reset_index()
+                    fig = px.bar(grouped, x='tahun', y=variable,
+                               title=f'Total {variable} per Tahun',
+                               labels={'tahun': 'Tahun', variable: f'Total {variable}'})
+                else:
+                    fig = px.histogram(df_clean, x=variable, 
+                                     title=f'Bar Chart - {variable}')
         
         elif chart_type == 'line':
-            if 'Tahun' in df_clean.columns:
-                fig = px.line(df_clean, x='Tahun', y=variable,
-                            title=f'Line Chart - {variable} over Years',
-                            markers=True)
+            if 'tahun' in df_clean.columns:
+                if df_clean[variable].dtype in ['object', 'category']:
+                    # For categorical variables, count occurrences per year
+                    grouped = df_clean.groupby(['tahun', variable]).size().reset_index(name='count')
+                    fig = px.line(grouped, x='tahun', y='count', color=variable,
+                                title=f'Tren Kasus Kriminal per Tahun - {variable}',
+                                labels={'tahun': 'Tahun', 'count': 'Jumlah Kasus'})
+                else:
+                    # For numeric variables, sum per year
+                    grouped = df_clean.groupby('tahun')[variable].sum().reset_index()
+                    fig = px.line(grouped, x='tahun', y=variable,
+                                title=f'Tren {variable} per Tahun',
+                                labels={'tahun': 'Tahun', variable: f'Total {variable}'})
             else:
-                # Use index if no time column
-                fig = px.line(df_clean, y=variable, 
-                            title=f'Line Chart - {variable}')
-        
-        elif chart_type == 'scatter':
-            # Find another numeric column for x-axis
-            numeric_cols = df_clean.select_dtypes(include=['number']).columns.tolist()
-            if len(numeric_cols) > 1:
-                x_var = [col for col in numeric_cols if col != variable][0]
-                fig = px.scatter(df_clean, x=x_var, y=variable,
-                               title=f'Scatter Plot - {variable} vs {x_var}',
-                               trendline='ols')
-            else:
-                fig = px.scatter(df_clean, y=variable,
-                               title=f'Scatter Plot - {variable}')
-        
-        elif chart_type == 'box':
-            fig = px.box(df_clean, y=variable,
-                        title=f'Box Plot - {variable}')
-        
-        elif chart_type == 'histogram':
-            fig = px.histogram(df_clean, x=variable,
-                             title=f'Histogram - {variable}')
+                return dbc.Alert("Line chart memerlukan kolom 'tahun' untuk tren waktu.", color="warning")
         
         elif chart_type == 'pie':
             if df_clean[variable].dtype in ['object', 'category']:
                 value_counts = df_clean[variable].value_counts()
                 fig = px.pie(values=value_counts.values, names=value_counts.index,
-                           title=f'Pie Chart - {variable}')
+                           title=f'Distribusi Kasus - {variable}')
             else:
                 return dbc.Alert("Pie chart hanya dapat digunakan untuk data kategorikal.", color="warning")
         
-        elif chart_type == 'area':
-            if 'Tahun' in df_clean.columns:
-                fig = px.area(df_clean, x='Tahun', y=variable,
-                            title=f'Area Chart - {variable} over Years')
+        elif chart_type == 'histogram':
+            if df_clean[variable].dtype in ['number']:
+                fig = px.histogram(df_clean, x=variable,
+                                 title=f'Distribusi {variable}')
             else:
-                fig = px.area(df_clean, y=variable,
-                            title=f'Area Chart - {variable}')
-        
-        elif chart_type == 'heatmap':
-            # Create correlation heatmap for numeric variables
-            numeric_cols = df_clean.select_dtypes(include=['number']).columns
-            if len(numeric_cols) > 1:
-                corr_matrix = df_clean[numeric_cols].corr()
-                fig = px.imshow(corr_matrix, 
-                              title='Heatmap - Correlation Matrix',
-                              color_continuous_scale='RdBu',
-                              aspect='auto')
-            else:
-                return dbc.Alert("Heatmap memerlukan lebih dari satu variabel numerik.", color="warning")
-        
-        elif chart_type == 'violin':
-            fig = px.violin(df_clean, y=variable,
-                          title=f'Violin Plot - {variable}')
+                return dbc.Alert("Histogram hanya dapat digunakan untuk data numerik.", color="warning")
         
         if fig is None:
             return dbc.Alert("Tidak dapat membuat grafik dengan tipe yang dipilih.", color="warning")
         
-        # Update layout and add collection ID annotation
+        # Update layout
         fig.update_layout(
             height=500,
             showlegend=True,
             annotations=[
                 dict(
-                    text=f"Collection ID: {collection_name}",
+                    text=f"Data: {collection_name}",
                     xref="paper", yref="paper",
                     x=1, y=-0.1, xanchor='right', yanchor='top',
                     showarrow=False,
@@ -456,9 +340,17 @@ def create_data_table(df):
         # Limit to first 100 rows for performance
         display_df = df.head(100)
         
+        # Select only relevant columns for display
+        relevant_cols = ['tahun', 'jenis_kejahatan', 'lokasi', 'jumlah_kasus', 'kecamatan', 'kelurahan']
+        display_cols = [col for col in relevant_cols if col in display_df.columns]
+        
+        # Add any remaining columns that aren't in the relevant list
+        other_cols = [col for col in display_df.columns if col not in relevant_cols]
+        display_cols.extend(other_cols)
+        
         return dash_table.DataTable(
-            data=display_df.to_dict('records'),
-            columns=[{"name": i, "id": i} for i in display_df.columns],
+            data=display_df[display_cols].to_dict('records'),
+            columns=[{"name": i, "id": i} for i in display_cols],
             style_table={'overflowX': 'auto'},
             style_cell={
                 'textAlign': 'left',

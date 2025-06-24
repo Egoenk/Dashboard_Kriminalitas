@@ -9,13 +9,20 @@ import io
 from server import db
 import logging
 from pathlib import Path
+import random
+import string
 
 dash.register_page(__name__, path="/upload", name="Upload")
 
 logger = logging.getLogger(__name__)
 
+def generate_random_id(length=20):
+    """Generate a random alphanumeric ID"""
+    chars = string.ascii_letters + string.digits
+    return ''.join(random.choice(chars) for _ in range(length))
+
 def convert_value(val):
-    """Convert string values to appropriate numeric types"""
+    """Convert string ke float"""
     if isinstance(val, str):
         val = val.replace(",", ".")  # replace comma with dot
         try:
@@ -29,7 +36,7 @@ def convert_value(val):
     return val  # return original if not a string
 
 def clean_field_name(field_name):
-    """Clean field names for better Firestore compatibility"""
+    """preprop nama"""
     if not isinstance(field_name, str):
         field_name = str(field_name)
     
@@ -39,17 +46,17 @@ def clean_field_name(field_name):
     # Handle common variations of "Tahun" (Year in Indonesian)
     tahun_variations = ['tahun', 'Tahun', 'TAHUN', 'year', 'Year', 'YEAR']
     if cleaned in tahun_variations:
-        return 'Tahun'
+        return 'tahun'
     
     # Handle ID variations
     id_variations = ['id', 'Id', 'ID', 'iD']
     if cleaned in id_variations:
-        return 'ID'
+        return 'id'
     
-    return cleaned
+    return cleaned.lower()  # Convert all field names to lowercase for consistency
 
 def upload_to_firestore(data, collection_name):
-    """Upload data to Firestore collection"""
+    """Upload data ke firestore"""
     try:
         collection_ref = db.collection(collection_name)
         uploaded_count = 0
@@ -59,68 +66,45 @@ def upload_to_firestore(data, collection_name):
             try:
                 # Clean field names and convert values
                 cleaned_record = {}
+                tahun_value = None
+                
                 for key, value in record.items():
                     clean_key = clean_field_name(key)
                     clean_value = convert_value(value)
+                    
                     # Skip empty/null values
                     if clean_value is not None and clean_value != '':
                         cleaned_record[clean_key] = clean_value
+                        
+                        # Check if this is the tahun field
+                        if clean_key == 'tahun':
+                            tahun_value = clean_value
                 
-                # Check for document ID field (look for year/id fields)
-                doc_id = None
-                id_field_name = None
+                # Generate random document ID
+                doc_id = generate_random_id()
                 
-                # Look for various year/id field patterns (case-insensitive)
-                possible_id_fields = ['Tahun', 'tahun', 'TAHUN', 'Year', 'year', 'YEAR', 
-                                    'ID', 'id', 'Id', 'iD']
-                
-                for field_name in cleaned_record.keys():
-                    # Check exact matches first
-                    if field_name in possible_id_fields:
-                        doc_id = str(cleaned_record[field_name])
-                        id_field_name = field_name
-                        break
-                    
-                    # Check if field contains year/id patterns
-                    field_lower = field_name.lower()
-                    if any(pattern in field_lower for pattern in ['tahun', 'year', 'id']):
-                        doc_id = str(cleaned_record[field_name])
-                        id_field_name = field_name
-                        break
-                
-                # If no ID field found, look in original record keys (before cleaning)
-                if not doc_id:
+                # Ensure tahun is included in the document data
+                if tahun_value is not None:
+                    cleaned_record['tahun'] = tahun_value
+                else:
+                    # Try to find tahun in original record if not found in cleaned
                     for key, value in record.items():
-                        key_lower = str(key).lower().strip()
-                        if key_lower in ['tahun', 'year', 'id'] or 'tahun' in key_lower or 'year' in key_lower:
-                            doc_id = str(convert_value(value))
-                            id_field_name = clean_field_name(key)
-                            break
+                        if str(key).lower() in ['tahun', 'year']:
+                            tahun_value = convert_value(value)
+                            if tahun_value is not None:
+                                cleaned_record['tahun'] = tahun_value
+                                break
                 
-                if doc_id and id_field_name:
-                    # Use the found field as document ID
-                    # Remove the ID field from document data to avoid duplication
-                    doc_data = {k: v for k, v in cleaned_record.items() if k != id_field_name}
-                    logger.info(f"Using document ID: {doc_id} from field: {id_field_name}")
-                else:
-                    # Auto-generate document ID
-                    doc_id = None
-                    doc_data = cleaned_record
-                    logger.warning(f"No ID field found in record {i+1}, using auto-generated ID")
+                # Add metadata
+                cleaned_record['created_at'] = pd.Timestamp.now()
                 
-                # Add metadata (only created_at)
-                doc_data['created_at'] = pd.Timestamp.now()
-                
-                if doc_id:
-                    collection_ref.document(doc_id).set(doc_data)
-                else:
-                    collection_ref.add(doc_data)
-                
+                # Upload with random document ID
+                collection_ref.document(doc_id).set(cleaned_record)
                 uploaded_count += 1
                 
             except Exception as e:
-                errors.append(f"Error uploading record {i+1}: {str(e)}")
-                logger.error(f"Error uploading record {i+1}: {e}")
+                errors.append(f"Error dalam upload record {i+1}: {str(e)}")
+                logger.error(f"Error dalam upload record {i+1}: {e}")
         
         return {
             'success': True,
@@ -138,7 +122,7 @@ def upload_to_firestore(data, collection_name):
             'total_records': len(data) if data else 0,
             'errors': []
         }
-
+    
 def parse_uploaded_file(contents, filename):
     """Parse uploaded file contents"""
     content_type, content_string = contents.split(',')

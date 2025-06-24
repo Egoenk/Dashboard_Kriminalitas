@@ -43,6 +43,7 @@ def get_all_collection_data():
                 doc_data = doc.to_dict()
                 doc_data['id'] = doc.id
                 doc_data['source_collection'] = collection_name  # Track source
+                doc_data['created_at'] = pd.Timestamp.now()
                 all_data.append(doc_data)
         
         logger.info(f"Retrieved {len(all_data)} total documents from {len(collections)} collections")
@@ -116,30 +117,52 @@ def upload_to_firestore(df, collection_name):
 def augment_crime_data(df, num_entries, noise_level=0.1):
     """
     Augment crime data by generating specified number of synthetic entries
-    Excludes 'tahun' column from augmentation
+    Keeps 'tahun' as base ID and adds iteration suffix (e.g., 2012_1, 2012_2)
+    Adds 'source' column to track augmentation method
     """
     if df.empty or num_entries <= 0:
         return df
     
-    # Exclude 'tahun' and other non-augmentable columns
-    exclude_columns = ['tahun', 'id', 'source_collection', 'created_at']
+    # Exclude columns that shouldn't be augmented
+    exclude_columns = ['source_collection', 'id' ,'created_at']
     augmentable_columns = [col for col in df.columns if col not in exclude_columns]
     numeric_columns = df.select_dtypes(include=[np.number]).columns
-    augmentable_numeric = [col for col in numeric_columns if col not in exclude_columns]
+    augmentable_numeric = [col for col in numeric_columns if col not in exclude_columns and col != 'tahun']
     
     augmented_rows = []
+    
+    # Keep track of iteration counts for each tahun value
+    tahun_counters = {}
     
     # Generate the specified number of synthetic entries
     for i in range(num_entries):
         # Choose augmentation method based on iteration
         if i % 3 == 0:
             # Gaussian noise augmentation
-            row = df.sample(1).copy().iloc[0].to_dict()
+            base_row = df.sample(1).copy().iloc[0].to_dict()
+            row = base_row.copy()
+            
+            # Get base tahun value
+            base_tahun = row.get('tahun', 'unknown')
+            
+            # Create iteration counter for this tahun
+            if base_tahun not in tahun_counters:
+                tahun_counters[base_tahun] = 1
+            else:
+                tahun_counters[base_tahun] += 1
+            
+            # Create new tahun ID with iteration
+            row['tahun'] = f"{base_tahun}_{tahun_counters[base_tahun]}"
+            
+            # Apply Gaussian noise to numeric columns
             for col in augmentable_numeric:
                 if col in row and pd.notna(row[col]):
                     original_value = float(row[col])
                     noise = np.random.normal(0, abs(original_value) * noise_level)
                     row[col] = max(0, original_value + noise)  # Ensure non-negative
+            
+            # Add source information
+            row['source'] = 'gaussian_noise_augmentation'
         
         elif i % 3 == 1:
             # Interpolation-based augmentation
@@ -149,8 +172,23 @@ def augment_crime_data(df, num_entries, noise_level=0.1):
             row = {}
             weight = np.random.uniform(0.3, 0.7)
             
+            # Use the first row's tahun as base
+            base_tahun = row1.get('tahun', 'unknown')
+            
+            # Create iteration counter for this tahun
+            if base_tahun not in tahun_counters:
+                tahun_counters[base_tahun] = 1
+            else:
+                tahun_counters[base_tahun] += 1
+            
+            # Create new tahun ID with iteration
+            row['tahun'] = f"{base_tahun}_{tahun_counters[base_tahun]}"
+            
+            # Interpolate values for all columns
             for col in augmentable_columns:
-                if col in augmentable_numeric and col in row1 and col in row2:
+                if col == 'tahun':
+                    continue  # Already handled above
+                elif col in augmentable_numeric and col in row1 and col in row2:
                     if pd.notna(row1[col]) and pd.notna(row2[col]):
                         row[col] = float(row1[col]) * weight + float(row2[col]) * (1 - weight)
                     else:
@@ -158,40 +196,63 @@ def augment_crime_data(df, num_entries, noise_level=0.1):
                 elif col in row1 and col in row2:
                     row[col] = row1[col] if np.random.random() > 0.5 else row2[col]
             
-            # Copy non-augmentable columns from first row
+            # Copy non-augmentable columns from first row (except tahun)
             for col in exclude_columns:
                 if col in row1:
                     row[col] = row1[col]
+            
+            # Add source information
+            row['source'] = 'interpolation_augmentation'
         
         else:
             # Bootstrap with slight variation
             base_row = df.sample(1).iloc[0].to_dict()
             row = base_row.copy()
             
+            # Get base tahun value
+            base_tahun = row.get('tahun', 'unknown')
+            
+            # Create iteration counter for this tahun
+            if base_tahun not in tahun_counters:
+                tahun_counters[base_tahun] = 1
+            else:
+                tahun_counters[base_tahun] += 1
+            
+            # Create new tahun ID with iteration
+            row['tahun'] = f"{base_tahun}_{tahun_counters[base_tahun]}"
+            
+            # Apply small random variation to numeric columns
             for col in augmentable_numeric:
                 if col in row and pd.notna(row[col]):
                     original_value = float(row[col])
                     # Add small random variation (5-15%)
                     variation = np.random.uniform(0.95, 1.15)
                     row[col] = max(0, original_value * variation)
+            
+            # Add source information
+            row['source'] = 'bootstrap_variation_augmentation'
         
         augmented_rows.append(row)
+    
+    # Add source column to original data
+    df_with_source = df.copy()
+    df_with_source['source'] = 'original_data'
     
     # Create DataFrame from augmented rows
     if augmented_rows:
         augmented_df = pd.DataFrame(augmented_rows)
         # Combine with original data
-        combined_df = pd.concat([df, augmented_df], ignore_index=True)
+        combined_df = pd.concat([df_with_source, augmented_df], ignore_index=True)
         return combined_df
     
-    return df
+    return df_with_source
 
 layout = dbc.Container([
     # Title
     dbc.Row([
         dbc.Col([
-            html.H2("Enhanced Data Augmentation for Crime Rate Prediction", className="text-center mb-4"),
-            html.P("Generate synthetic crime data entries from all available collections to enhance model training", 
+            html.H2("Data Augmentation untuk Crime Rate Prediction", className="text-center mb-4"),
+            html.P("Augmentasi data dari semua data collection untuk membantu model training", 
                    className="text-center text-muted mb-4"),
             html.Hr(),
         ], width=12)
@@ -201,34 +262,20 @@ layout = dbc.Container([
     dbc.Row([
         dbc.Col([
             dbc.Card([
-                dbc.CardHeader(html.H4("Data Source Selection", className="mb-0")),
+                dbc.CardHeader(html.H4("Pemilihan Sumber Data", className="mb-0")),
                 dbc.CardBody([
-                    html.P("Choose to load all data from Firestore collections or upload a specific CSV file.", 
+                    html.P("Upload atau Pilih data dari firebase", 
                            className="text-muted mb-3"),
                     
                     dbc.Row([
                         dbc.Col([
-                            dbc.Button("Load All Collections Data", 
-                                     id="load-all-btn", 
-                                     color="primary", 
-                                     size="lg",
-                                     className="w-100 mb-3"),
-                            dcc.Loading(
-                                id="loading-all",
-                                type="default",
-                                children=html.Div(id="loading-all-output")
-                            ),
-                            html.P("This will load and combine data from all available Firestore collections", 
-                                   className="text-muted small text-center")
-                        ], width=6),
-                        dbc.Col([
-                            html.Label("Or Select Specific Collection:", className="form-label"),
+                            html.Label("Pilih Data Collection:", className="form-label"),
                             dcc.Dropdown(
                                 id="collection-dropdown-augmentation",
                                 placeholder="Choose a collection...",
                                 className="mb-2"
                             ),
-                            dbc.Button("Load Selected Collection", 
+                            dbc.Button("Muat Data", 
                                      id="load-collection-btn", 
                                      color="secondary", 
                                      className="w-100"),
@@ -243,7 +290,7 @@ layout = dbc.Container([
                     html.Hr(),
                     
                     # File upload
-                    html.Label("Or Upload CSV File:", className="form-label"),
+                    html.Label("atau Upload File CSV :", className="form-label"),
                     dcc.Upload(
                         id='upload-data',
                         children=html.Div([
@@ -262,7 +309,7 @@ layout = dbc.Container([
                         },
                         multiple=False
                     ),
-                    dbc.Button("Load Uploaded File", id="load-file-btn", color="info", className="w-100"),
+                    dbc.Button("Muat data Yang Diupload", id="load-file-btn", color="info", className="w-100"),
                     dcc.Loading(
                         id="loading-file",
                         type="default",
@@ -277,14 +324,14 @@ layout = dbc.Container([
     dbc.Row([
         dbc.Col([
             dbc.Card([
-                dbc.CardHeader(html.H4("Augmentation Configuration", className="mb-0")),
+                dbc.CardHeader(html.H4("Konfigurasi Augmentasi", className="mb-0")),
                 dbc.CardBody([
-                    html.P("Configure how many synthetic entries to generate and noise parameters.", 
-                           className="text-muted mb-3"),
+                    html.P("Atur seberapa banyak entries sintesik untuk di generate, dan parameter noisenya.", 
+                        className="text-muted mb-3"),
                     
                     dbc.Row([
                         dbc.Col([
-                            html.Label("Number of Synthetic Entries:", className="form-label"),
+                            html.Label("Banyaknya Synthetic Entries:", className="form-label"),
                             dbc.Input(
                                 id="num-entries",
                                 type="number",
@@ -294,8 +341,8 @@ layout = dbc.Container([
                                 step=1,
                                 className="mb-2"
                             ),
-                            html.P("Enter how many synthetic data entries to generate", 
-                                   className="text-muted small")
+                            html.P("Masukan beberapa banyak entries untuk di-generate", 
+                                className="text-muted small")
                         ], width=6),
                         dbc.Col([
                             html.Label("Noise Level:", className="form-label"),
@@ -308,22 +355,27 @@ layout = dbc.Container([
                                 marks={i/20: f'{i/20:.2f}' for i in range(1, 7)},
                                 tooltip={"placement": "bottom", "always_visible": True}
                             ),
-                            html.P("Controls the amount of variation in synthetic data", 
-                                   className="text-muted small")
+                            html.P("Kontrol varisasi noise di dalam data ", 
+                                className="text-muted small")
                         ], width=6)
                     ]),
                     
                     dbc.Alert([
                         html.I(className="fas fa-info-circle me-2"),
-                        "Note: The 'tahun' column will be preserved and not modified during augmentation."
+                        html.Div([
+                            html.P("Augmentation Features:", className="fw-bold mb-2"),
+                            html.Ul([
+                                html.Li("Kolom 'source' akan ditambahkan untuk lebih memperjelas"),
+                                html.Li("Tiga metode augmentasi : Gaussian Noise, Interpolation, and Bootstrap Variation")                        ], className="mb-0")
+                        ])
                     ], color="info", className="mt-3"),
                     
                     html.Div([
-                        dbc.Button("Generate Synthetic Data", 
-                                 id="augment-btn", 
-                                 color="success", 
-                                 size="lg",
-                                 className="w-100"),
+                        dbc.Button("Generate Data Sintesis", 
+                                id="augment-btn", 
+                                color="success", 
+                                size="lg",
+                                className="w-100"),
                         dcc.Loading(
                             id="loading-augment",
                             type="default",
@@ -335,39 +387,13 @@ layout = dbc.Container([
         ], width=12)
     ]),
 
-    # Section 3: Data Overview and Visualization
-    dbc.Row([
-        dbc.Col([
-            dbc.Card([
-                dbc.CardHeader(html.H4("Data Overview & Visualization", className="mb-0")),
-                dbc.CardBody([
-                    dcc.Loading(
-                        id="loading-summary",
-                        type="default",
-                        children=html.Div(id="data-summary", className="mb-3")
-                    ),
-                    dcc.Loading(
-                        id="loading-distribution",
-                        type="default",
-                        children=dcc.Graph(id="data-distribution-graph")
-                    ),
-                    dcc.Loading(
-                        id="loading-comparison",
-                        type="default",
-                        children=dcc.Graph(id="augmentation-comparison-graph")
-                    )
-                ])
-            ], className="mb-4")
-        ], width=12)
-    ]),
-
     # Section 4: Export Augmented Data
     dbc.Row([
         dbc.Col([
             dbc.Card([
-                dbc.CardHeader(html.H4("Export Augmented Data", className="mb-0")),
+                dbc.CardHeader(html.H4("Aksi Lanjutan", className="mb-0")),
                 dbc.CardBody([
-                    html.P("Download your augmented dataset or upload it to Firestore for future use.", 
+                    html.P("Download data atau upload ke firestore", 
                            className="text-muted mb-3"),
                     
                     dbc.Row([
@@ -383,11 +409,11 @@ layout = dbc.Container([
                                 type="default",
                                 children=html.Div(id="loading-download-output")
                             ),
-                            html.P("Download augmented data as CSV file", 
+                            html.P("Download sebagai file CSV", 
                                    className="text-muted small text-center")
                         ], width=6),
                         dbc.Col([
-                            dbc.Button("Upload to Firestore", 
+                            dbc.Button("Upload ke Firestore", 
                                      id="upload-firestore-btn", 
                                      color="warning", 
                                      disabled=True,
@@ -398,7 +424,7 @@ layout = dbc.Container([
                                 type="default",
                                 children=html.Div(id="loading-upload-output")
                             ),
-                            html.P("Save augmented data to new Firestore collection", 
+                            html.P("Simpan data ke dalam firestore", 
                                    className="text-muted small text-center")
                         ], width=6)
                     ]),
@@ -407,7 +433,7 @@ layout = dbc.Container([
                     dbc.Modal([
                         dbc.ModalHeader(dbc.ModalTitle("Upload to Firestore")),
                         dbc.ModalBody([
-                            html.P("Configure your Firestore upload:"),
+                            html.P("Konfigurasi upload anda:"),
                             html.Label("Collection Name:", className="form-label"),
                             dbc.Input(
                                 id="new-collection-name",
@@ -417,8 +443,8 @@ layout = dbc.Container([
                             dbc.Checklist(
                                 id="upload-options",
                                 options=[
-                                    {"label": "Create new collection", "value": "new"},
-                                    {"label": "Overwrite existing collection", "value": "overwrite"},
+                                    {"label": "Buat collection baru", "value": "new"},
+                                    {"label": "Timpa collection yang ada", "value": "overwrite"},
                                 ],
                                 value=["new"],
                                 className="mb-3"
@@ -463,7 +489,7 @@ def populate_collections(_):
     collections = get_firestore_collections()
     return [{"label": col, "value": col} for col in collections]
 
-# Callback to handle data loading (all collections)
+# Updated callback for data loading (all collections) - shows new column handling
 @callback(
     [Output("stored-data", "children"),
      Output("augmentation-status", "children"),
@@ -483,17 +509,17 @@ def load_all_data(n_clicks):
             source_info = f"Loaded from ALL Firestore collections ({collections_count} collections)"
             
             # Show information about columns that will be augmented
-            exclude_columns = ['tahun', 'id', 'source_collection']
+            exclude_columns = ['id','source_collection', 'created_at']
             augmentable_columns = [col for col in df.columns if col not in exclude_columns]
             numeric_columns = [col for col in df.select_dtypes(include=[np.number]).columns 
-                             if col not in exclude_columns]
+                             if col not in exclude_columns and col != 'tahun']
             
             return df.to_json(date_format='iso', orient='split'), dbc.Alert([
                 html.H5("Data Loaded Successfully!", className="alert-heading"),
                 html.P(f"{source_info}"),
                 html.P(f"Total rows: {df.shape[0]} | Total columns: {df.shape[1]}"),
-                html.P(f"Augmentable columns: {len(augmentable_columns)} | Numeric columns: {len(numeric_columns)}"),
-                html.P(f"Excluded from augmentation: {', '.join(exclude_columns)}", className="small text-muted")
+                html.P(f"Augmentable columns: {len(augmentable_columns)} | Numeric columns for variation: {len(numeric_columns)}"),
+                html.P(f"New 'source' column will track augmentation methods", className="small text-info")
             ], color="success"), ""
         else:
             return "", dbc.Alert("No data found in any collection.", color="warning"), ""
@@ -501,7 +527,7 @@ def load_all_data(n_clicks):
         logger.error(f"Error loading all data: {e}")
         return "", dbc.Alert(f"Error loading data: {str(e)}", color="danger"), ""
 
-# Callback to handle data loading (specific collection)
+# Updated callback for data loading (specific collection)
 @callback(
     [Output("stored-data", "children", allow_duplicate=True),
      Output("augmentation-status", "children", allow_duplicate=True),
@@ -521,17 +547,19 @@ def load_collection_data(n_clicks, collection_name):
             source_info = f"Loaded from Firestore collection: {collection_name}"
             
             # Show information about columns that will be augmented
-            exclude_columns = ['tahun', 'id', 'source_collection']
+            exclude_columns = ['id','source_collection', 'created_at']
             augmentable_columns = [col for col in df.columns if col not in exclude_columns]
             numeric_columns = [col for col in df.select_dtypes(include=[np.number]).columns 
-                             if col not in exclude_columns]
+                             if col not in exclude_columns and col != 'tahun']
             
             return df.to_json(date_format='iso', orient='split'), dbc.Alert([
                 html.H5("Data Loaded Successfully!", className="alert-heading"),
                 html.P(f"{source_info}"),
                 html.P(f"Total rows: {df.shape[0]} | Total columns: {df.shape[1]}"),
-                html.P(f"Augmentable columns: {len(augmentable_columns)} | Numeric columns: {len(numeric_columns)}"),
-                html.P(f"Excluded from augmentation: {', '.join(exclude_columns)}", className="small text-muted")
+                html.P(f"Augmentable columns: {len(augmentable_columns)} | Numeric columns for variation: {len(numeric_columns)}"),
+                html.P(f"'tahun' will be used as base ID with iteration suffixes (e.g., 2012_1, 2012_2)", className="small text-info"),
+                html.P(f"New 'source' column will track augmentation methods", className="small text-info"),
+                html.P(f"Excluded from numeric augmentation: tahun, id, source_collection, created_at", className="small text-muted")
             ], color="success"), ""
         else:
             return "", dbc.Alert("No data found in selected collection.", color="warning"), ""
@@ -539,7 +567,7 @@ def load_collection_data(n_clicks, collection_name):
         logger.error(f"Error loading collection data: {e}")
         return "", dbc.Alert(f"Error loading data: {str(e)}", color="danger"), ""
 
-# Callback to handle data loading (file upload)
+# Updated callback for data loading (file upload)
 @callback(
     [Output("stored-data", "children", allow_duplicate=True),
      Output("augmentation-status", "children", allow_duplicate=True),
@@ -562,17 +590,17 @@ def load_file_data(n_clicks, uploaded_content, filename):
             source_info = f"Uploaded file: {filename}"
             
             # Show information about columns that will be augmented
-            exclude_columns = ['tahun', 'id', 'source_collection']
+            exclude_columns = ['id','source_collection', 'created_at']
             augmentable_columns = [col for col in df.columns if col not in exclude_columns]
             numeric_columns = [col for col in df.select_dtypes(include=[np.number]).columns 
-                             if col not in exclude_columns]
+                             if col not in exclude_columns and col != 'tahun']
             
             return df.to_json(date_format='iso', orient='split'), dbc.Alert([
-                html.H5("Data Loaded Successfully!", className="alert-heading"),
+                html.H5("Data berhasil dimuat!", className="alert-heading"),
                 html.P(f"{source_info}"),
-                html.P(f"Total rows: {df.shape[0]} | Total columns: {df.shape[1]}"),
-                html.P(f"Augmentable columns: {len(augmentable_columns)} | Numeric columns: {len(numeric_columns)}"),
-                html.P(f"Excluded from augmentation: {', '.join(exclude_columns)}", className="small text-muted")
+                html.P(f"Total baris: {df.shape[0]} | Total kolom: {df.shape[1]}"),
+                html.P(f"Kolom yang bisa di augmentasi: {len(augmentable_columns)} | Kolom Numeric untuk divariasi: {len(numeric_columns)}"),
+                html.P(f"Kolom 'source' ditambahkan", className="small text-info"),
             ], color="success"), ""
         else:
             return "", dbc.Alert("Please upload a CSV file.", color="danger"), ""
@@ -580,7 +608,7 @@ def load_file_data(n_clicks, uploaded_content, filename):
         logger.error(f"Error loading file data: {e}")
         return "", dbc.Alert(f"Error loading file: {str(e)}", color="danger"), ""
 
-# Callback for data augmentation
+# Updated callback for augmentation status display
 @callback(
     [Output("augmented-data", "children"),
      Output("download-btn", "disabled"),
@@ -610,15 +638,27 @@ def augment_data(n_clicks, stored_data, num_entries, noise_level):
         augmented_size = len(augmented_df)
         added_rows = augmented_size - original_size
         
+        # Count augmentation methods used
+        source_counts = augmented_df['source'].value_counts()
+        augmentation_methods = source_counts[source_counts.index != 'original_data']
+        
+        method_breakdown = html.Ul([
+            html.Li(f"{method.replace('_', ' ').title()}: {count:,} entries") 
+            for method, count in augmentation_methods.items()
+        ])
+        
         return (augmented_df.to_json(date_format='iso', orient='split'), 
                 False, 
                 False, 
                 dbc.Alert([
-                    html.H5("Data Augmentation Complete!", className="alert-heading"),
-                    html.P(f"Original dataset: {original_size:,} rows"),
-                    html.P(f"Generated synthetic entries: {added_rows:,} rows"),
-                    html.P(f"Total augmented dataset: {augmented_size:,} rows"),
-                    html.P(f"Increase: {added_rows/original_size*100:.1f}%", className="fw-bold")
+                    html.H5("Augemtasi Data Selesai!", className="alert-heading"),
+                    html.P(f"Dataset Original: {original_size:,} rows"),
+                    html.P(f"Entries yang digenerate entries: {added_rows:,} rows"),
+                    html.P(f"Total dataset: {augmented_size:,} rows"),
+                    html.P(f"Besar perubahan: {added_rows/original_size*100:.1f}%", className="fw-bold"),
+                    html.Hr(),
+                    html.P("✓ 'tahun' values now include iteration suffixes (e.g., 2012_1)", className="small text-success"),
+                    html.P("✓ 'source' column added", className="small text-success")
                 ], color="success"), 
                 "")
 
@@ -626,7 +666,7 @@ def augment_data(n_clicks, stored_data, num_entries, noise_level):
         logger.error(f"Error during augmentation: {e}")
         return "", True, True, dbc.Alert(f"Error during augmentation: {str(e)}", color="danger"), ""
 
-# Callback for data visualization
+# Updated visualization callback to handle the new source column
 @callback(
     [Output("data-summary", "children"),
      Output("data-distribution-graph", "figure"),
@@ -642,9 +682,9 @@ def update_visualizations(stored_data, augmented_data):
         df = pd.read_json(stored_data, orient='split')
         
         # Data summary
-        exclude_columns = ['tahun', 'id', 'source_collection']
+        exclude_columns = ['source_collection', 'id' ,'created_at']
         augmentable_numeric = [col for col in df.select_dtypes(include=[np.number]).columns 
-                              if col not in exclude_columns]
+                              if col not in exclude_columns and col != 'tahun']
         
         summary = dbc.Row([
             dbc.Col([
@@ -653,17 +693,17 @@ def update_visualizations(stored_data, augmented_data):
                         html.H6("Dataset Summary", className="card-title"),
                         html.P(f"Total Rows: {df.shape[0]:,}", className="mb-1"),
                         html.P(f"Total Columns: {df.shape[1]}", className="mb-1"),
-                        html.P(f"Augmentable Numeric Columns: {len(augmentable_numeric)}", className="mb-1"),
+                        html.P(f"Numeric Columns for Augmentation: {len(augmentable_numeric)}", className="mb-1"),
                     ])
                 ], color="light")
             ], width=6),
             dbc.Col([
                 dbc.Card([
                     dbc.CardBody([
-                        html.H6("Column Information", className="card-title"),
-                        html.P("Excluded from augmentation:", className="mb-1 small text-muted"),
-                        html.P("tahun, id, source_collection", className="mb-1 small"),
-                        html.P(f"Will augment: {len(augmentable_numeric)} numeric columns", className="mb-1 small text-success"),
+                        html.H6("Augmentation Info", className="card-title"),
+                        html.P("'tahun' → base ID with iterations", className="mb-1 small text-info"),
+                        html.P("New 'source' column → tracks methods", className="mb-1 small text-info"),
+                        html.P(f"Will vary: {len(augmentable_numeric)} numeric columns", className="mb-1 small text-success"),
                     ])
                 ], color="light")
             ], width=6)
@@ -678,16 +718,34 @@ def update_visualizations(stored_data, augmented_data):
             fig1 = go.Figure().add_annotation(text="No augmentable numeric columns found", 
                                             xref="paper", yref="paper", x=0.5, y=0.5)
         
-        # Comparison graph
+        # Comparison graph with source tracking
         if augmented_data and len(augmentable_numeric) > 0:
             aug_df = pd.read_json(augmented_data, orient='split')
             col = augmentable_numeric[0]
             
             fig2 = go.Figure()
-            fig2.add_trace(go.Histogram(x=df[col], name="Original", opacity=0.7, nbinsx=30))
-            fig2.add_trace(go.Histogram(x=aug_df[col], name="Augmented", opacity=0.7, nbinsx=30))
+            
+            # Original data
+            original_data = aug_df[aug_df['source'] == 'original_data']
+            fig2.add_trace(go.Histogram(x=original_data[col], name="Original", opacity=0.7, nbinsx=30))
+            
+            # Augmented data by method
+            augmentation_methods = aug_df[aug_df['source'] != 'original_data']['source'].unique()
+            colors = ['red', 'green', 'orange', 'purple', 'brown']
+            
+            for i, method in enumerate(augmentation_methods):
+                method_data = aug_df[aug_df['source'] == method]
+                method_name = method.replace('_', ' ').title()
+                fig2.add_trace(go.Histogram(
+                    x=method_data[col], 
+                    name=method_name, 
+                    opacity=0.6, 
+                    nbinsx=30,
+                    marker_color=colors[i % len(colors)]
+                ))
+            
             fig2.update_layout(
-                title=f"Original vs Augmented Data Distribution - {col}",
+                title=f"Data Distribution by Source - {col}",
                 barmode='overlay',
                 height=400
             )
@@ -700,7 +758,7 @@ def update_visualizations(stored_data, augmented_data):
     except Exception as e:
         logger.error(f"Error creating visualizations: {e}")
         return dbc.Alert(f"Error: {str(e)}", color="danger"), {}, {}
-
+    
 # Callback for downloading augmented data
 @callback(
     [Output("download-augmented-data", "data"),
