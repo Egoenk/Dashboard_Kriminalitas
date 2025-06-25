@@ -12,6 +12,8 @@ import plotly.express as px
 import plotly.graph_objects as go
 from sklearn.preprocessing import StandardScaler
 from sklearn.ensemble import RandomForestRegressor
+import uuid
+from datetime import datetime
 import numpy as np
 
 # Set up logging
@@ -116,23 +118,22 @@ def upload_to_firestore(df, collection_name):
 
 def augment_crime_data(df, num_entries, noise_level=0.1):
     """
-    Augment crime data by generating specified number of synthetic entries
-    Keeps 'tahun' as base ID and adds iteration suffix (e.g., 2012_1, 2012_2)
-    Adds 'source' column to track augmentation method
+    Improved augmentation that preserves tahun as numeric and adds proper tracking
+    Keeps 'tahun' as base numeric value and adds comprehensive tracking
     """
     if df.empty or num_entries <= 0:
         return df
     
     # Exclude columns that shouldn't be augmented
-    exclude_columns = ['source_collection', 'id' ,'created_at']
+    exclude_columns = ['source_collection', 'id', 'created_at', 'record_id', 'synthetic_id']
     augmentable_columns = [col for col in df.columns if col not in exclude_columns]
     numeric_columns = df.select_dtypes(include=[np.number]).columns
-    augmentable_numeric = [col for col in numeric_columns if col not in exclude_columns and col != 'tahun']
+    augmentable_numeric = [col for col in numeric_columns if col not in exclude_columns]
     
     augmented_rows = []
     
-    # Keep track of iteration counts for each tahun value
-    tahun_counters = {}
+    # Keep track of synthetic entries per year and method
+    year_synthetic_counts = {}
     
     # Generate the specified number of synthetic entries
     for i in range(num_entries):
@@ -142,27 +143,30 @@ def augment_crime_data(df, num_entries, noise_level=0.1):
             base_row = df.sample(1).copy().iloc[0].to_dict()
             row = base_row.copy()
             
-            # Get base tahun value
-            base_tahun = row.get('tahun', 'unknown')
+            # Keep original tahun as numeric
+            base_tahun = row.get('tahun', 2020)  # Default fallback
+            row['tahun'] = base_tahun
             
-            # Create iteration counter for this tahun
-            if base_tahun not in tahun_counters:
-                tahun_counters[base_tahun] = 1
-            else:
-                tahun_counters[base_tahun] += 1
+            # Create tracking for synthetic data
+            if base_tahun not in year_synthetic_counts:
+                year_synthetic_counts[base_tahun] = {'gaussian': 0, 'interpolation': 0, 'bootstrap': 0}
+            year_synthetic_counts[base_tahun]['gaussian'] += 1
             
-            # Create new tahun ID with iteration
-            row['tahun'] = f"{base_tahun}_{tahun_counters[base_tahun]}"
+            # Add unique identifiers
+            row['record_id'] = str(uuid.uuid4())[:8]
+            row['synthetic_id'] = f"{base_tahun}_gauss_{year_synthetic_counts[base_tahun]['gaussian']}"
+            row['is_synthetic'] = True
+            row['base_year'] = base_tahun
             
-            # Apply Gaussian noise to numeric columns
+            # Apply Gaussian noise to numeric columns (exclude tahun)
             for col in augmentable_numeric:
-                if col in row and pd.notna(row[col]):
+                if col in row and pd.notna(row[col]) and col != 'tahun':
                     original_value = float(row[col])
                     noise = np.random.normal(0, abs(original_value) * noise_level)
                     row[col] = max(0, original_value + noise)  # Ensure non-negative
             
-            # Add source information
             row['source'] = 'gaussian_noise_augmentation'
+            row['augmentation_timestamp'] = datetime.now().isoformat()
         
         elif i % 3 == 1:
             # Interpolation-based augmentation
@@ -172,80 +176,182 @@ def augment_crime_data(df, num_entries, noise_level=0.1):
             row = {}
             weight = np.random.uniform(0.3, 0.7)
             
-            # Use the first row's tahun as base
-            base_tahun = row1.get('tahun', 'unknown')
+            # Use the first row's tahun as base (keep numeric)
+            base_tahun = row1.get('tahun', 2020)
+            row['tahun'] = base_tahun
             
-            # Create iteration counter for this tahun
-            if base_tahun not in tahun_counters:
-                tahun_counters[base_tahun] = 1
-            else:
-                tahun_counters[base_tahun] += 1
+            # Create tracking
+            if base_tahun not in year_synthetic_counts:
+                year_synthetic_counts[base_tahun] = {'gaussian': 0, 'interpolation': 0, 'bootstrap': 0}
+            year_synthetic_counts[base_tahun]['interpolation'] += 1
             
-            # Create new tahun ID with iteration
-            row['tahun'] = f"{base_tahun}_{tahun_counters[base_tahun]}"
+            # Add unique identifiers
+            row['record_id'] = str(uuid.uuid4())[:8]
+            row['synthetic_id'] = f"{base_tahun}_interp_{year_synthetic_counts[base_tahun]['interpolation']}"
+            row['is_synthetic'] = True
+            row['base_year'] = base_tahun
             
-            # Interpolate values for all columns
-            for col in augmentable_columns:
+            # Interpolate values for numeric columns (exclude tahun)
+            for col in augmentable_numeric:
                 if col == 'tahun':
                     continue  # Already handled above
-                elif col in augmentable_numeric and col in row1 and col in row2:
+                elif col in row1 and col in row2:
                     if pd.notna(row1[col]) and pd.notna(row2[col]):
                         row[col] = float(row1[col]) * weight + float(row2[col]) * (1 - weight)
                     else:
                         row[col] = row1[col] if pd.notna(row1[col]) else row2[col]
-                elif col in row1 and col in row2:
-                    row[col] = row1[col] if np.random.random() > 0.5 else row2[col]
             
-            # Copy non-augmentable columns from first row (except tahun)
+            # Handle non-numeric columns
+            for col in augmentable_columns:
+                if col not in augmentable_numeric and col not in ['tahun', 'record_id', 'synthetic_id', 'is_synthetic', 'base_year']:
+                    if col in row1 and col in row2:
+                        row[col] = row1[col] if np.random.random() > 0.5 else row2[col]
+            
+            # Copy excluded columns from first row
             for col in exclude_columns:
-                if col in row1:
+                if col in row1 and col not in ['record_id', 'synthetic_id']:
                     row[col] = row1[col]
             
-            # Add source information
             row['source'] = 'interpolation_augmentation'
+            row['augmentation_timestamp'] = datetime.now().isoformat()
         
         else:
             # Bootstrap with slight variation
             base_row = df.sample(1).iloc[0].to_dict()
             row = base_row.copy()
             
-            # Get base tahun value
-            base_tahun = row.get('tahun', 'unknown')
+            # Keep original tahun as numeric
+            base_tahun = row.get('tahun', 2020)
+            row['tahun'] = base_tahun
             
-            # Create iteration counter for this tahun
-            if base_tahun not in tahun_counters:
-                tahun_counters[base_tahun] = 1
-            else:
-                tahun_counters[base_tahun] += 1
+            # Create tracking
+            if base_tahun not in year_synthetic_counts:
+                year_synthetic_counts[base_tahun] = {'gaussian': 0, 'interpolation': 0, 'bootstrap': 0}
+            year_synthetic_counts[base_tahun]['bootstrap'] += 1
             
-            # Create new tahun ID with iteration
-            row['tahun'] = f"{base_tahun}_{tahun_counters[base_tahun]}"
+            # Add unique identifiers
+            row['record_id'] = str(uuid.uuid4())[:8]
+            row['synthetic_id'] = f"{base_tahun}_boot_{year_synthetic_counts[base_tahun]['bootstrap']}"
+            row['is_synthetic'] = True
+            row['base_year'] = base_tahun
             
-            # Apply small random variation to numeric columns
+            # Apply small random variation to numeric columns (exclude tahun)
             for col in augmentable_numeric:
-                if col in row and pd.notna(row[col]):
+                if col in row and pd.notna(row[col]) and col != 'tahun':
                     original_value = float(row[col])
                     # Add small random variation (5-15%)
                     variation = np.random.uniform(0.95, 1.15)
                     row[col] = max(0, original_value * variation)
             
-            # Add source information
             row['source'] = 'bootstrap_variation_augmentation'
+            row['augmentation_timestamp'] = datetime.now().isoformat()
         
         augmented_rows.append(row)
     
-    # Add source column to original data
-    df_with_source = df.copy()
-    df_with_source['source'] = 'original_data'
+    # Add tracking columns to original data
+    df_with_tracking = df.copy()
+    df_with_tracking['record_id'] = [str(uuid.uuid4())[:8] for _ in range(len(df))]
+    df_with_tracking['synthetic_id'] = df_with_tracking['tahun'].astype(str) + '_original'
+    df_with_tracking['is_synthetic'] = False
+    df_with_tracking['base_year'] = df_with_tracking['tahun']
+    df_with_tracking['source'] = 'original_data'
+    df_with_tracking['augmentation_timestamp'] = datetime.now().isoformat()
     
     # Create DataFrame from augmented rows
     if augmented_rows:
         augmented_df = pd.DataFrame(augmented_rows)
         # Combine with original data
-        combined_df = pd.concat([df_with_source, augmented_df], ignore_index=True)
+        combined_df = pd.concat([df_with_tracking, augmented_df], ignore_index=True)
         return combined_df
     
-    return df_with_source
+    return df_with_tracking
+
+def validate_augmented_data(df):
+    """
+    Validate that augmented data maintains proper structure
+    """
+    validation_results = {
+        'tahun_is_numeric': pd.api.types.is_numeric_dtype(df['tahun']),
+        'unique_record_ids': df['record_id'].nunique() == len(df),
+        'has_tracking_columns': all(col in df.columns for col in ['is_synthetic', 'base_year', 'synthetic_id']),
+        'year_range_preserved': (df['tahun'].min(), df['tahun'].max()),
+        'synthetic_count': df['is_synthetic'].sum() if 'is_synthetic' in df.columns else 0,
+        'original_count': (~df['is_synthetic']).sum() if 'is_synthetic' in df.columns else len(df),
+        'augmentation_methods': df['source'].value_counts().to_dict() if 'source' in df.columns else {}
+    }
+    
+    return validation_results
+
+def create_augmentation_success_message(df, augmented_df):
+    """
+    Create enhanced success message with validation
+    """
+    original_size = len(df)
+    augmented_size = len(augmented_df)
+    added_rows = augmented_size - original_size
+    
+    # Validate the augmented data
+    validation = validate_augmented_data(augmented_df)
+    
+    # Count augmentation methods used
+    source_counts = augmented_df['source'].value_counts()
+    augmentation_methods = source_counts[source_counts.index != 'original_data']
+    
+    method_breakdown = html.Ul([
+        html.Li(f"{method.replace('_', ' ').title()}: {count:,} entries") 
+        for method, count in augmentation_methods.items()
+    ])
+    
+    # Create validation status
+    validation_status = []
+    if validation['tahun_is_numeric']:
+        validation_status.append(html.Li("✓ 'tahun' preserved as numeric", className="text-success"))
+    if validation['unique_record_ids']:
+        validation_status.append(html.Li("✓ All record_ids are unique", className="text-success"))
+    if validation['has_tracking_columns']:
+        validation_status.append(html.Li("✓ All tracking columns added", className="text-success"))
+    
+    return dbc.Alert([
+        html.H5("Augmentasi Data Selesai!", className="alert-heading"),
+        html.P(f"Dataset Original: {original_size:,} rows"),
+        html.P(f"Entries yang digenerate: {added_rows:,} rows"),
+        html.P(f"Total dataset: {augmented_size:,} rows"),
+        html.P(f"Besar perubahan: {added_rows/original_size*100:.1f}%", className="fw-bold"),
+        html.Hr(),
+        html.P("Metode Augmentasi:", className="fw-bold"),
+        method_breakdown,
+        html.Hr(),
+        html.P("Validasi:", className="fw-bold"),
+        html.Ul(validation_status),
+        html.P(f"Year range: {validation['year_range_preserved'][0]} - {validation['year_range_preserved'][1]}", 
+               className="small text-info")
+    ], color="success")
+
+def create_data_loading_success_message(df, source_info):
+    """
+    Create enhanced data loading success message
+    """
+    # Show information about columns that will be augmented
+    exclude_columns = ['id', 'source_collection', 'created_at', 'record_id', 'synthetic_id', 'is_synthetic', 'base_year', 'augmentation_timestamp']
+    augmentable_columns = [col for col in df.columns if col not in exclude_columns]
+    numeric_columns = [col for col in df.select_dtypes(include=[np.number]).columns 
+                      if col not in exclude_columns]
+    
+    return dbc.Alert([
+        html.H5("Data berhasil dimuat!", className="alert-heading"),
+        html.P(f"{source_info}"),
+        html.P(f"Total baris: {df.shape[0]} | Total kolom: {df.shape[1]}"),
+        html.P(f"Kolom yang bisa di augmentasi: {len(augmentable_columns)} | Kolom Numeric untuk divariasi: {len(numeric_columns)}"),
+        html.Hr(),
+        html.P("Peningkatan ID Strategy:", className="fw-bold text-success"),
+        html.Ul([
+            html.Li("'tahun' akan tetap numeric untuk analisis time-series"),
+            html.Li("'record_id' unik akan ditambahkan untuk setiap record"),
+            html.Li("'synthetic_id' akan menunjukkan metode augmentasi"),
+            html.Li("'is_synthetic' flag untuk memudahkan filtering"),
+            html.Li("'base_year' untuk tracking tahun asli")
+        ], className="small"),
+    ], color="success")
 
 layout = dbc.Container([
     # Title
@@ -508,19 +614,7 @@ def load_all_data(n_clicks):
             collections_count = len(df['source_collection'].unique()) if 'source_collection' in df.columns else 0
             source_info = f"Loaded from ALL Firestore collections ({collections_count} collections)"
             
-            # Show information about columns that will be augmented
-            exclude_columns = ['id','source_collection', 'created_at']
-            augmentable_columns = [col for col in df.columns if col not in exclude_columns]
-            numeric_columns = [col for col in df.select_dtypes(include=[np.number]).columns 
-                             if col not in exclude_columns and col != 'tahun']
-            
-            return df.to_json(date_format='iso', orient='split'), dbc.Alert([
-                html.H5("Data Loaded Successfully!", className="alert-heading"),
-                html.P(f"{source_info}"),
-                html.P(f"Total rows: {df.shape[0]} | Total columns: {df.shape[1]}"),
-                html.P(f"Augmentable columns: {len(augmentable_columns)} | Numeric columns for variation: {len(numeric_columns)}"),
-                html.P(f"New 'source' column will track augmentation methods", className="small text-info")
-            ], color="success"), ""
+            return df.to_json(date_format='iso', orient='split'), create_data_loading_success_message(df, source_info), ""
         else:
             return "", dbc.Alert("No data found in any collection.", color="warning"), ""
     except Exception as e:
@@ -538,31 +632,17 @@ def load_all_data(n_clicks):
 )
 def load_collection_data(n_clicks, collection_name):
     if not n_clicks or not collection_name:
-        return "", dbc.Alert("Please select a collection first.", color="warning"), ""
+        return "", dbc.Alert("Pilih koleksi terlebih dahulu.", color="warning"), ""
     
     try:
         data = get_collection_data(collection_name)
         if data:
             df = pd.DataFrame(data)
-            source_info = f"Loaded from Firestore collection: {collection_name}"
+            source_info = f"Data dimuat dari collection: {collection_name}"
             
-            # Show information about columns that will be augmented
-            exclude_columns = ['id','source_collection', 'created_at']
-            augmentable_columns = [col for col in df.columns if col not in exclude_columns]
-            numeric_columns = [col for col in df.select_dtypes(include=[np.number]).columns 
-                             if col not in exclude_columns and col != 'tahun']
-            
-            return df.to_json(date_format='iso', orient='split'), dbc.Alert([
-                html.H5("Data Loaded Successfully!", className="alert-heading"),
-                html.P(f"{source_info}"),
-                html.P(f"Total rows: {df.shape[0]} | Total columns: {df.shape[1]}"),
-                html.P(f"Augmentable columns: {len(augmentable_columns)} | Numeric columns for variation: {len(numeric_columns)}"),
-                html.P(f"'tahun' will be used as base ID with iteration suffixes (e.g., 2012_1, 2012_2)", className="small text-info"),
-                html.P(f"New 'source' column will track augmentation methods", className="small text-info"),
-                html.P(f"Excluded from numeric augmentation: tahun, id, source_collection, created_at", className="small text-muted")
-            ], color="success"), ""
+            return df.to_json(date_format='iso', orient='split'), create_data_loading_success_message(df, source_info), ""
         else:
-            return "", dbc.Alert("No data found in selected collection.", color="warning"), ""
+            return "", dbc.Alert("Tidak ada data didalam collection.", color="warning"), ""
     except Exception as e:
         logger.error(f"Error loading collection data: {e}")
         return "", dbc.Alert(f"Error loading data: {str(e)}", color="danger"), ""
@@ -589,19 +669,7 @@ def load_file_data(n_clicks, uploaded_content, filename):
             df = pd.read_csv(io.StringIO(decoded.decode('utf-8')))
             source_info = f"Uploaded file: {filename}"
             
-            # Show information about columns that will be augmented
-            exclude_columns = ['id','source_collection', 'created_at']
-            augmentable_columns = [col for col in df.columns if col not in exclude_columns]
-            numeric_columns = [col for col in df.select_dtypes(include=[np.number]).columns 
-                             if col not in exclude_columns and col != 'tahun']
-            
-            return df.to_json(date_format='iso', orient='split'), dbc.Alert([
-                html.H5("Data berhasil dimuat!", className="alert-heading"),
-                html.P(f"{source_info}"),
-                html.P(f"Total baris: {df.shape[0]} | Total kolom: {df.shape[1]}"),
-                html.P(f"Kolom yang bisa di augmentasi: {len(augmentable_columns)} | Kolom Numeric untuk divariasi: {len(numeric_columns)}"),
-                html.P(f"Kolom 'source' ditambahkan", className="small text-info"),
-            ], color="success"), ""
+            return df.to_json(date_format='iso', orient='split'), create_data_loading_success_message(df, source_info), ""
         else:
             return "", dbc.Alert("Please upload a CSV file.", color="danger"), ""
     except Exception as e:
@@ -634,32 +702,10 @@ def augment_data(n_clicks, stored_data, num_entries, noise_level):
         # Apply augmentation
         augmented_df = augment_crime_data(df, num_entries, noise_level)
         
-        original_size = len(df)
-        augmented_size = len(augmented_df)
-        added_rows = augmented_size - original_size
-        
-        # Count augmentation methods used
-        source_counts = augmented_df['source'].value_counts()
-        augmentation_methods = source_counts[source_counts.index != 'original_data']
-        
-        method_breakdown = html.Ul([
-            html.Li(f"{method.replace('_', ' ').title()}: {count:,} entries") 
-            for method, count in augmentation_methods.items()
-        ])
-        
         return (augmented_df.to_json(date_format='iso', orient='split'), 
                 False, 
                 False, 
-                dbc.Alert([
-                    html.H5("Augemtasi Data Selesai!", className="alert-heading"),
-                    html.P(f"Dataset Original: {original_size:,} rows"),
-                    html.P(f"Entries yang digenerate entries: {added_rows:,} rows"),
-                    html.P(f"Total dataset: {augmented_size:,} rows"),
-                    html.P(f"Besar perubahan: {added_rows/original_size*100:.1f}%", className="fw-bold"),
-                    html.Hr(),
-                    html.P("✓ 'tahun' values now include iteration suffixes (e.g., 2012_1)", className="small text-success"),
-                    html.P("✓ 'source' column added", className="small text-success")
-                ], color="success"), 
+                create_augmentation_success_message(df, augmented_df), 
                 "")
 
     except Exception as e:
@@ -816,6 +862,7 @@ def update_upload_warning(options, collection_name):
      State("upload-options", "value")],
     prevent_initial_call=True
 )
+
 def upload_to_firestore_callback(n_clicks, augmented_data, collection_name, options):
     if not n_clicks or not augmented_data or not collection_name:
         return "", ""

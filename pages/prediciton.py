@@ -297,7 +297,7 @@ layout = dbc.Container([
     dbc.Row([
         dbc.Col([
             dbc.Card([
-                dbc.CardHeader(html.H4("Feature Importance Analysis", className="mb-0")),
+                dbc.CardHeader(html.H4("Analisis Feature Importance", className="mb-0")),
                 dbc.CardBody([
                     dcc.Graph(id="feature-importance-graph")
                 ])
@@ -309,7 +309,7 @@ layout = dbc.Container([
     dbc.Row([
         dbc.Col([
             dbc.Card([
-                dbc.CardHeader(html.H4("Prediction Results & Visualization", className="mb-0")),
+                dbc.CardHeader(html.H4("Visualisasi Hasil Prediksi", className="mb-0")),
                 dbc.CardBody([
                     dcc.Graph(id="prediction-graph")
                 ])
@@ -321,7 +321,7 @@ layout = dbc.Container([
     dbc.Row([
         dbc.Col([
             dbc.Card([
-                dbc.CardHeader(html.H4("Future Crime Rate Prediction", className="mb-0")),
+                dbc.CardHeader(html.H4("Prediksi Kriminalitas Di Masa Depan", className="mb-0")),
                 dbc.CardBody([
                     html.Div(id="future-prediction", className="mb-3")
                 ])
@@ -502,7 +502,7 @@ def train_model_and_predict(n_clicks, collection_name, model_key):
             x=y_test,
             y=y_pred,
             mode='markers',
-            name='Actual vs Predicted',
+            name='Sebenarnya vs Diprediksi',
             marker=dict(color='blue', size=8, opacity=0.6)
         ))
         
@@ -518,9 +518,9 @@ def train_model_and_predict(n_clicks, collection_name, model_key):
         ))
         
         pred_fig.update_layout(
-            title=f"Actual vs Predicted - {MODEL_CONFIGS[model_key]['name']}",
-            xaxis_title="Actual Crime Rate",
-            yaxis_title="Predicted Crime Rate",
+            title=f"Sebenarnya vs Diprediksi - {MODEL_CONFIGS[model_key]['name']}",
+            xaxis_title="Kriminalitas Sebernanya",
+            yaxis_title="Kriminalitas Diprediksi",
             hovermode='closest'
         )
 
@@ -539,10 +539,10 @@ def train_model_and_predict(n_clicks, collection_name, model_key):
 
         # Status message
         status_alert = dbc.Alert([
-            html.H5("Model Training Completed Successfully!", className="alert-heading"),
+            html.H5("Pelatihan Model Berhasil!", className="alert-heading"),
             html.P(f"Model: {MODEL_CONFIGS[model_key]['name']}"),
-            html.P(f"Trained on {len(df)} records from '{collection_name}' collection."),
-            html.P(f"Model achieved {accuracy:.2f}% R² score with {mape:.2f}% MAPE.", className="mb-0")
+            html.P(f"Dilatih dari  {len(df)} records dari '{collection_name}' collection."),
+            html.P(f"Akurasi model {accuracy:.2f}% R² score dengan {mape:.2f}% MAPE.", className="mb-0")
         ], color="success")
 
         return (
