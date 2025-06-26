@@ -114,7 +114,7 @@ def upload_to_firestore(data, collection_name):
         }
     
     except Exception as e:
-        logger.error(f"Error uploading to Firestore: {e}")
+        logger.error(f"Error dalam proses upload ke Firestore: {e}")
         return {
             'success': False,
             'error': str(e),
@@ -164,10 +164,10 @@ def parse_uploaded_file(contents, filename):
             return data, None
         
         else:
-            return None, f"Unsupported file type: {filename}"
+            return None, f"Tipe file tidak di dukung: {filename}"
     
     except Exception as e:
-        return None, f"Error parsing file {filename}: {str(e)}"
+        return None, f"Error saat parsing file {filename}: {str(e)}"
 
 # Layout
 layout = dbc.Container([
@@ -186,7 +186,7 @@ layout = dbc.Container([
                     html.H4("Upload File", className="mb-0")
                 ]),
                 dbc.CardBody([
-                    html.P("Upload your dataset file (JSON, CSV, or Excel format)", 
+                    html.P("Upload dataset (JSON, CSV, atau Excel format)", 
                            className="text-muted mb-3"),
                     
                     # File upload component
@@ -195,8 +195,8 @@ layout = dbc.Container([
                         children=html.Div([
                             html.I(className="fas fa-cloud-upload-alt fa-3x mb-3"),
                             html.Br(),
-                            html.P("Drag and Drop or Click to Select Files"),
-                            html.P("Supported formats: JSON, CSV, Excel", 
+                            html.P("Drag and Drop atau Klik untuk Memilih File"),
+                            html.P("Formats yang diteirima: JSON, CSV, Excel", 
                                    className="text-muted small")
                         ]),
                         style={
@@ -224,27 +224,27 @@ layout = dbc.Container([
         dbc.Col([
             dbc.Card([
                 dbc.CardHeader([
-                    html.H4("Dataset Configuration", className="mb-0")
+                    html.H4("Konfigurasi Dataset", className="mb-0")
                 ]),
                 dbc.CardBody([
                     dbc.Row([
                         dbc.Col([
-                            html.Label("Dataset Name:", className="fw-bold mb-2"),
+                            html.Label("Nama Dataset:", className="fw-bold mb-2"),
                             dbc.Input(
                                 id="dataset-name-input",
                                 placeholder="Enter dataset collection name (e.g., crime_data_2024)",
                                 type="text",
                                 className="mb-3"
                             ),
-                            html.Small("This will be the name of the Firestore collection", 
+                            html.Small("Nama akan digunakan sebagai placeholder dataset dalam firestore", 
                                      className="text-muted")
                         ], width=6),
                         dbc.Col([
-                            html.Label("Upload Options:", className="fw-bold mb-2"),
+                            html.Label("Opsi Upload:", className="fw-bold mb-2"),
                             dbc.Checklist(
                                 id="upload-options",
                                 options=[
-                                    {"label": "Overwrite existing data", "value": "overwrite"},
+                                    {"label": "Timpa data yang ada", "value": "overwrite"},
                                 ],
                                 value=[],
                                 className="mb-3"
@@ -253,7 +253,7 @@ layout = dbc.Container([
                     ]),
                     
                     dbc.Button(
-                        "Upload to Firestore",
+                        "Upload ke Firestore",
                         id="upload-to-firestore-btn",
                         color="primary",
                         size="lg",
@@ -312,9 +312,9 @@ def handle_file_upload(contents, filename):
         
         # Create status message
         status = dbc.Alert([
-            html.H5("File uploaded successfully!", className="alert-heading"),
+            html.H5("File berhasil di upload!", className="alert-heading"),
             html.P(f"File: {filename}"),
-            html.P(f"Records found: {len(data)}")
+            html.P(f"Records ditemukan: {len(data)}")
         ], color="success")
         
         # Store file info
@@ -345,12 +345,12 @@ def create_data_preview(data, filename):
     
     return dbc.Card([
         dbc.CardHeader([
-            html.H4("Data Preview", className="mb-0")
+            html.H4("Preview Data", className="mb-0")
         ]),
         dbc.CardBody([
-            html.P(f"Showing first 5 records from {filename}", className="text-muted mb-3"),
-            html.P(f"Total records: {len(data)} | Columns: {len(df.columns)}", className="fw-bold"),
-            html.P(f"Columns: {', '.join(df.columns)}", className="text-muted small mb-3"),
+            html.P(f"Menunjukan 5 records pertama dari {filename}", className="text-muted mb-3"),
+            html.P(f"Jumlah records: {len(data)} | Columns: {len(df.columns)}", className="fw-bold"),
+            html.P(f"Kolom: {', '.join(df.columns)}", className="text-muted small mb-3"),
             
             # Data table
             html.Div([
@@ -404,9 +404,9 @@ def upload_to_firebase(n_clicks, data, dataset_name, options, file_info):
         if result['success']:
             # Success message
             success_content = [
-                html.H4("Upload Successful!", className="alert-heading"),
-                html.P(f"Dataset uploaded to collection: '{dataset_name}'"),
-                html.P(f"Records uploaded: {result['uploaded_count']}/{result['total_records']}"),
+                html.H4("Upload Berhasil!", className="alert-heading"),
+                html.P(f"Dataset diupload ke collection: '{dataset_name}'"),
+                html.P(f"Records yang diupload: {result['uploaded_count']}/{result['total_records']}"),
             ]
             
             if result['errors']:
@@ -420,9 +420,9 @@ def upload_to_firebase(n_clicks, data, dataset_name, options, file_info):
         else:
             # Error message
             error_content = [
-                html.H4("Upload Failed!", className="alert-heading"),
+                html.H4("Upload Gagal!", className="alert-heading"),
                 html.P(f"Error: {result.get('error', 'Unknown error')}"),
-                html.P(f"Records processed: {result['uploaded_count']}/{result['total_records']}")
+                html.P(f"Records di proses: {result['uploaded_count']}/{result['total_records']}")
             ]
             
             return dbc.Alert(error_content, color="danger", dismissable=True)

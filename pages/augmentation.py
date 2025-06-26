@@ -409,7 +409,7 @@ layout = dbc.Container([
     # Title
     dbc.Row([
         dbc.Col([
-            html.H2("Data Augmentation untuk Crime Rate Prediction", className="text-center mb-4"),
+            html.H2("Augmentasi data untuk Prediksi Tingkat Kriminalitas", className="text-center mb-4"),
             html.P("Augmentasi data dari semua data collection untuk membantu model training", 
                    className="text-center text-muted mb-4"),
             html.Hr(),
@@ -615,8 +615,8 @@ layout = dbc.Container([
                             )
                         ]),
                         dbc.ModalFooter([
-                            dbc.Button("Cancel", id="cancel-upload", className="me-2", color="secondary"),
-                            dbc.Button("Confirm Upload", id="confirm-upload", color="warning")
+                            dbc.Button("Batalkan", id="cancel-upload", className="me-2", color="secondary"),
+                            dbc.Button("Confim Upload", id="confirm-upload", color="warning")
                         ])
                     ], id="upload-modal", is_open=False),
                     
@@ -723,10 +723,10 @@ def load_file_data(n_clicks, uploaded_content, filename):
             
             return df.to_json(date_format='iso', orient='split'), create_data_loading_success_message(df, source_info), ""
         else:
-            return "", dbc.Alert("Please upload a CSV file.", color="danger"), ""
+            return "", dbc.Alert("Tolong Upload File CSV", color="danger"), ""
     except Exception as e:
-        logger.error(f"Error loading file data: {e}")
-        return "", dbc.Alert(f"Error loading file: {str(e)}", color="danger"), ""
+        logger.error(f"Error dalam memuat data: {e}")
+        return "", dbc.Alert(f"Error dalam memuat file: {str(e)}", color="danger"), ""
 
 # Updated callback for augmentation status display
 @callback(
@@ -749,7 +749,7 @@ def augment_data(n_clicks, stored_data, num_entries, noise_level):
         df = pd.read_json(stored_data, orient='split')
         
         if num_entries <= 0:
-            return "", True, True, dbc.Alert("Please enter a valid number of entries (greater than 0).", color="warning"), ""
+            return "", True, True, dbc.Alert("Masukan angka diatas 0 (nol).", color="warning"), ""
         
         # Apply augmentation
         augmented_df = augment_crime_data(df, num_entries, noise_level)
@@ -761,8 +761,8 @@ def augment_data(n_clicks, stored_data, num_entries, noise_level):
                 "")
 
     except Exception as e:
-        logger.error(f"Error during augmentation: {e}")
-        return "", True, True, dbc.Alert(f"Error during augmentation: {str(e)}", color="danger"), ""
+        logger.error(f"Error saat proses augmentatasi: {e}")
+        return "", True, True, dbc.Alert(f"Error saat proses augmentasi: {str(e)}", color="danger"), ""
 
 # Updated visualization callback to handle the new source column
 @callback(
@@ -896,12 +896,12 @@ def update_upload_warning(options, collection_name):
     if "overwrite" in options:
         return dbc.Alert([
             html.I(className="fas fa-exclamation-triangle me-2"),
-            "Warning: This will overwrite all existing data in the collection!"
+            "Hal ini akan menimpa seluruh colleciton sama!"
         ], color="warning")
     else:
         return dbc.Alert([
             html.I(className="fas fa-info-circle me-2"),
-            "A new collection will be created with your augmented data."
+            "Collection baru telath di buat dengan data yang sudah di augmentasi"
         ], color="info")
 
 # Callback for actual Firestore upload
@@ -924,7 +924,7 @@ def upload_to_firestore_callback(n_clicks, augmented_data, collection_name, opti
         
         # Validate collection name
         if not collection_name.strip():
-            return dbc.Alert("Please enter a valid collection name.", color="danger"), ""
+            return dbc.Alert("Masukan nama collection yang valid", color="danger"), ""
         
         collection_name = collection_name.strip()
         
@@ -949,22 +949,22 @@ def upload_to_firestore_callback(n_clicks, augmented_data, collection_name, opti
                 if count % 500 != 0:
                     batch.commit()
                     
-                logger.info(f"Deleted {count} existing documents from {collection_name}")
+                logger.info(f"Dihapus {count} dari collection {collection_name}")
             except Exception as e:
-                logger.warning(f"Error clearing collection (might not exist): {e}")
+                logger.warning(f"Error saat membersihkan colletion (mungkin tidak ada): {e}")
         
         # Upload the augmented data
         success, uploaded_count = upload_to_firestore(df, collection_name)
         
         if success:
             return dbc.Alert([
-                html.H5("Upload Successful!", className="alert-heading"),
-                html.P(f"Uploaded {uploaded_count:,} documents to collection: {collection_name}"),
-                html.P(f"Your augmented crime dataset is now available in Firestore!")
+                html.H5("Upload Berhasil!", className="alert-heading"),
+                html.P(f"Sudah Di Upload {uploaded_count:,} ke collection: {collection_name}"),
+                html.P(f"Data sudah Tersedia di Firestore!")
             ], color="success"), ""
         else:
-            return dbc.Alert("Failed to upload data to Firestore. Check logs for details.", color="danger"), ""
+            return dbc.Alert("Gagal mengupload data.", color="danger"), ""
             
     except Exception as e:
-        logger.error(f"Error in upload callback: {e}")
-        return dbc.Alert(f"Error uploading to Firestore: {str(e)}", color="danger"), ""
+        logger.error(f"Error di upload callback: {e}")
+        return dbc.Alert(f"Error upload ke firestore: {str(e)}", color="danger"), ""

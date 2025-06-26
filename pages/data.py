@@ -20,7 +20,7 @@ def get_firestore_collections():
         return []
 
 def get_collection_data(collection_name):
-    """Ambil data dari collection"""
+    """Ambil data dari collection dan sort berdasarkan tahun"""
     try:
         docs = db.collection(collection_name).stream()
         data = []
@@ -28,6 +28,21 @@ def get_collection_data(collection_name):
             doc_data = doc.to_dict()
             doc_data['id'] = doc.id
             data.append(doc_data)
+        
+        # Sort data berdasarkan tahun (ascending)
+        if data:
+            # Convert tahun to numeric for proper sorting, handle missing/invalid values
+            def get_year_key(item):
+                year = item.get('tahun')
+                if year is None:
+                    return float('inf')  # Put None values at the end
+                try:
+                    return int(year)
+                except (ValueError, TypeError):
+                    return float('inf')  # Put invalid values at the end
+            
+            data.sort(key=get_year_key)
+        
         return data
     except Exception as e:
         logger.error(f"Error dalam mengambil data dari collection {collection_name}: {e}")
@@ -39,8 +54,8 @@ def format_columns_for_display(data):
         return [], []
     
     # 1. Define our strict column order
-    priority_columns = ['tahun', 'source']  # Always first two if present
-    mandatory_end_column = 'created_at'  # Always last if present
+    priority_columns = ['tahun', 'source']
+    mandatory_end_column = 'created_at'  
     
     # 2. Get all available columns (excluding internal 'id')
     available_columns = [col for col in data[0].keys() if col != 'id']
@@ -80,8 +95,7 @@ def format_columns_for_display(data):
             column_def.update({
                 "type": "numeric",
                 "format": {
-                    "specifier": "f",
-                    "group": ""  # Disable all grouping
+                    "specifier": ".0f"
                 }
             })
         
@@ -113,7 +127,6 @@ def format_columns_for_display(data):
                     "type": "numeric",
                     "format": {
                         "locale": {
-                            "decimal": "",
                             "group": "."
                         },
                         "specifier": ",.0f"
@@ -258,11 +271,25 @@ layout = html.Div([
                                 'textAlign': 'right',
                                 'paddingRight': '20px'
                             },
-                            # Style for tahun column
+                            # Style for tahun column - special highlighting
                             {
                                 'if': {'column_id': 'tahun'},
                                 'backgroundColor': '#e3f2fd',
-                                'fontWeight': 'bold'
+                                'fontWeight': 'bold',
+                                'textAlign': 'center'
+                            },
+                            # Style for source column
+                            {
+                                'if': {'column_id': 'source'},
+                                'backgroundColor': '#f0f8ff',
+                                'fontStyle': 'italic'
+                            },
+                            # Style for created_at column
+                            {
+                                'if': {'column_id': 'created_at'},
+                                'backgroundColor': '#f5f5f5',
+                                'fontSize': '12px',
+                                'color': '#666'
                             }
                         ],
                         css=[
@@ -286,7 +313,15 @@ layout = html.Div([
     
     # Confirmation modals
     save_confirm_modal,
-    delete_confirm_modal
+    delete_confirm_modal,
+    
+    # Interval component for dynamic table updates
+    dcc.Interval(
+        id='table-update-interval',
+        interval=30*1000,  # Update every 30 seconds
+        n_intervals=0,
+        disabled=True
+    )
 ])
 
 # Callback to populate collection dropdown
@@ -308,26 +343,30 @@ def update_collection_options(_):
 @callback(
     [Output('load-data-button', 'disabled'),
      Output('delete-collection-button', 'disabled'),
-     Output('selected-collection-store', 'data')],
+     Output('selected-collection-store', 'data'),
+     Output('table-update-interval', 'disabled')],
     Input('data-collection-dropdown', 'value')
 )
 def enable_buttons(collection_name):
-    """Button nyala setelah memilih koleksi"""
+    """Button nyala setelah memilih koleksi dan enable interval update"""
     disabled = collection_name is None
-    return False, disabled, collection_name
+    interval_disabled = collection_name is None
+    return False, disabled, collection_name, interval_disabled
 
-# Callback to load data from selected collection
+# Callback to load data from selected collection (including interval updates)
 @callback(
     [Output("table-data-store", "data"),
      Output("data-status-message", "children"),
      Output("data-info", "children"),
      Output('add-row-button', 'disabled'),
      Output('save-changes-button', 'disabled')],
-    Input("load-data-button", "n_clicks"),
+    [Input("load-data-button", "n_clicks"),
+     Input('table-update-interval', 'n_intervals')],
     State("selected-collection-store", "data")
 )
-def load_data(n_clicks, collection_name):
-    if not n_clicks or not collection_name:
+def load_data(n_clicks, n_intervals, collection_name):
+    # Only load if button clicked or interval triggered (and collection selected)
+    if (not n_clicks and n_intervals == 0) or not collection_name:
         return [], "", "", True, True
     
     try:
@@ -341,17 +380,40 @@ def load_data(n_clicks, collection_name):
             return [], status_msg, "", True, True
         
         # Create status message
-        status_msg = dbc.Alert(
-            f"Berhasil memuat {len(data)} baris data dari koleksi '{collection_name}'", 
-            color="success"
-        )
+        ctx = dash.callback_context
+        triggered_by = "interval" if ctx.triggered and "interval" in ctx.triggered[0]['prop_id'] else "button"
+        
+        if triggered_by == "interval":
+            status_msg = dbc.Alert(
+                f"Data diperbarui otomatis - {len(data)} baris dari '{collection_name}' (diurutkan berdasarkan tahun)", 
+                color="info",
+                dismissable=True
+            )
+        else:
+            status_msg = dbc.Alert(
+                f"Berhasil memuat {len(data)} baris data dari koleksi '{collection_name}' (diurutkan berdasarkan tahun)", 
+                color="success"
+            )
         
         # Create info about the data
         columns = list(data[0].keys()) if data else []
+        
+        # Get year range for display
+        years = [row.get('tahun') for row in data if row.get('tahun') is not None]
+        year_info = ""
+        if years:
+            try:
+                numeric_years = [int(y) for y in years if str(y).isdigit()]
+                if numeric_years:
+                    year_info = f"Rentang tahun: {min(numeric_years)} - {max(numeric_years)}"
+            except:
+                year_info = "Rentang tahun: Data campuran"
+        
         info_content = [
             html.H5("Informasi Data:", className="mb-2"),
             html.P(f"Jumlah baris: {len(data):,}"),
             html.P(f"Jumlah kolom: {len(columns)}"),
+            html.P(year_info) if year_info else html.Span(),
             html.P(f"Kolom tersedia: {', '.join([col for col in columns if col != 'id'])}")
         ]
         info_div = dbc.Card(
@@ -395,13 +457,29 @@ def add_row(n_clicks, current_data, collection_name):
     
     if not current_data:
         # If no data yet, create a basic structure
-        return [{"tahun": "", "source": "", "created_at": ""}]
+        new_row = {"tahun": "", "source": "", "created_at": pd.Timestamp.now().strftime("%Y-%m-%d %H:%M:%S")}
+        return [new_row]
     
     # Create a new row with the same columns as existing data (excluding id)
     new_row = {key: "" for key in current_data[0].keys() if key != 'id'}
     new_row["created_at"] = pd.Timestamp.now().strftime("%Y-%m-%d %H:%M:%S")
-    current_data.append(new_row)
-    return current_data
+    
+    # Add new row and re-sort by tahun
+    updated_data = current_data + [new_row]
+    
+    # Sort the updated data by tahun
+    def get_year_key(item):
+        year = item.get('tahun')
+        if year is None or year == "":
+            return float('inf')  # Put empty values at the end
+        try:
+            return int(year)
+        except (ValueError, TypeError):
+            return float('inf')  # Put invalid values at the end
+    
+    updated_data.sort(key=get_year_key)
+    
+    return updated_data
 
 # Callback to show save confirmation modal
 @callback(
@@ -463,7 +541,7 @@ def handle_data_operations(save_clicks, delete_clicks, table_data, collection_na
                     doc_id = row['id']
                     del row['id']
                 
-                if not any(str(v).strip() for v in row.values()):
+                if not any(str(v).strip() for v in row.values() if v is not None):
                     continue
                 
                 if doc_id:
@@ -477,13 +555,15 @@ def handle_data_operations(save_clicks, delete_clicks, table_data, collection_na
                     doc_ref.set(row)
                     saved_count += 1
             
+            # Get updated data with proper sorting
             updated_data = get_collection_data(collection_name)
             
             success_msg = dbc.Alert([
                 html.H5("Perubahan berhasil disimpan!", className="alert-heading"),
                 html.P(f"Data baru: {saved_count:,} baris"),
                 html.P(f"Data diperbarui: {updated_count:,} baris"),
-                html.P(f"Total data di '{collection_name}': {len(updated_data):,} baris")
+                html.P(f"Total data di '{collection_name}': {len(updated_data):,} baris"),
+                html.P("Data telah diurutkan berdasarkan tahun")
             ], color="success", dismissable=True)
             
             return success_msg, updated_data, dash.no_update
