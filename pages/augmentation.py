@@ -324,17 +324,17 @@ def create_augmentation_success_message(df, augmented_df):
     # Create validation status
     validation_status = []
     if validation['has_all_required_columns']:
-        validation_status.append(html.Li("✓ All required columns present", className="text-success"))
+        validation_status.append(html.Li("✓ Semua kolom tersedia", className="text-success"))
     else:
-        validation_status.append(html.Li(f"⚠ Missing columns: {validation['missing_columns']}", className="text-warning"))
+        validation_status.append(html.Li(f"⚠ Kolom Hilang: {validation['missing_columns']}", className="text-warning"))
     
     if validation['tahun_is_numeric']:
-        validation_status.append(html.Li("✓ 'tahun' preserved as numeric", className="text-success"))
+        validation_status.append(html.Li("✓ 'tahun' di simpan sebagai angka numeric", className="text-success"))
     
     if not validation['extra_columns']:
-        validation_status.append(html.Li("✓ No extra columns", className="text-success"))
+        validation_status.append(html.Li("✓ Tidak ada extra kolom", className="text-success"))
     else:
-        validation_status.append(html.Li(f"⚠ Extra columns found: {validation['extra_columns']}", className="text-warning"))
+        validation_status.append(html.Li(f"⚠ Kolom Ekstra ditemukan: {validation['extra_columns']}", className="text-warning"))
     
     return dbc.Alert([
         html.H5("Augmentasi Data Selesai!", className="alert-heading"),
@@ -386,21 +386,20 @@ def create_data_loading_success_message(df, source_info):
         html.P(f"Total baris: {df.shape[0]} | Total kolom: {df.shape[1]}"),
         html.P(f"Target columns present: {len(present_columns)}/23 | Numeric columns for augmentation: {len(numeric_columns)}"),
         html.Hr(),
-        html.P("Column Status:", className="fw-bold"),
+        html.P("Status kolom:", className="fw-bold"),
         html.Ul([
-            html.Li(f"✓ Present: {len(present_columns)} columns", className="text-success"),
-            html.Li(f"⚠ Missing: {len(missing_columns)} columns" + (f" - {missing_columns[:3]}..." if missing_columns else ""), 
+            html.Li(f"✓ Ada: {len(present_columns)} Kolom", className="text-success"),
+            html.Li(f"⚠ Kurang: {len(missing_columns)} Kolom" + (f" - {missing_columns[:3]}..." if missing_columns else ""), 
                    className="text-warning" if missing_columns else "text-success"),
-            html.Li(f"📊 Will augment: {len(numeric_columns)} numeric columns", className="text-info")
+            html.Li(f"📊 Akan diaugment: {len(numeric_columns)}  kolom numeric", className="text-info")
         ], className="small"),
         html.Hr(),
-        html.P("Augmentation Strategy:", className="fw-bold text-success"),
+        html.P("Fitur augmentasi:", className="fw-bold text-success"),
         html.Ul([
             html.Li("'tahun' akan dipertahankan sebagai base identifier"),
-            html.Li("'source' column akan menunjukkan metode augmentasi"),
-            html.Li("Missing columns akan diisi dengan nilai default"),
+            html.Li("kolom 'source' akan menunjukkan metode augmentasi"),
+            html.Li("Kolom kosong akan diisi dengan nilai default"),
             html.Li("'created_at' akan ditambahkan untuk timestamp"),
-            html.Li("Output akan mengikuti struktur yang tepat")
         ], className="small"),
     ], color="success")
 

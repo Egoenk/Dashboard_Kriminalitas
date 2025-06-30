@@ -26,7 +26,7 @@ def create_sidebar(user_role=None):
         nav_items.insert(0, dbc.NavLink("1. Upload CSV", href="/upload", active="exact"))
     
     return html.Div([
-        html.H2("Dashboard Kriminalitas", className="display-6 text-primary"),
+        html.H2("SIKAPMAS", className="display-6 text-primary"),
         html.Hr(),
         dbc.Nav(nav_items, vertical=True, pills=True),
         html.Hr(),

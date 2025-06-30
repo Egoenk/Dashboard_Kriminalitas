@@ -559,6 +559,7 @@ def update_model_description(model_key):
     [Input("collection-dropdown-prediction", "value"),
      Input("model-dropdown", "value")]
 )
+
 def validate_data_and_model(collection_name, model_key):
     if not collection_name or not model_key:
         return (
@@ -638,9 +639,9 @@ def train_model_and_predict(n_clicks, collection_name, model_key):
                 font=dict(size=16, color="red")
             )
             error_status = dbc.Alert([
-                html.H5("❌ Training Failed", className="alert-heading"),
-                html.P("No data available in the selected collection."),
-                html.P("Please check your data source and try again.")
+                html.H5("❌ Training Gagal", className="alert-heading"),
+                html.P("Tidak ada data dalam selection."),
+                html.P("Mohon untuk mengecek data kembali.")
             ], color="danger")
             return None, None, error_status, empty_fig, empty_fig, html.P(""), html.Div()
 
@@ -650,12 +651,12 @@ def train_model_and_predict(n_clicks, collection_name, model_key):
             df = df.sort_values('tahun', ascending=True).reset_index(drop=True)
             sorted_order = df['tahun'].tolist()
             
-            logger.info(f"CHRONOLOGICAL SORTING APPLIED:")
-            logger.info(f"  Original order: {original_order}")
-            logger.info(f"  Sorted order: {sorted_order}")
-            logger.info(f"  Years range: {min(sorted_order)} - {max(sorted_order)}")
+            logger.info(f"URUTAN TAHUN SUDAH DIUURTKAN:")
+            logger.info(f"  Urutan Asli: {original_order}")
+            logger.info(f"  Yang Sudah Diurut: {sorted_order}")
+            logger.info(f"  Rentang Tahun: {min(sorted_order)} - {max(sorted_order)}")
         else:
-            logger.warning("⚠️ NO 'tahun' COLUMN FOUND - TIME SERIES ANALYSIS MAY BE INVALID")
+            logger.warning("⚠️ Tidak ada kolom 'tahun' - Analisis Time Series Tidak Dapat Dilakukan")
 
         # Run the model pipeline with sorted data
         model, accuracy, mape, mse, rmse, y_next, y_pred, y_test, errors = run_model_pipeline(df, model_key)
@@ -674,7 +675,7 @@ def train_model_and_predict(n_clicks, collection_name, model_key):
             )
             
             error_status = dbc.Alert([
-                html.H5("❌ Model Training Failed", className="alert-heading"),
+                html.H5("❌ Model Training Gagal", className="alert-heading"),
                 html.P(error_msg),
                 html.Ul([html.Li(error) for error in errors[:5]]) if errors else html.P("")
             ], color="danger")
@@ -847,19 +848,19 @@ def train_model_and_predict(n_clicks, collection_name, model_key):
                         dbc.CardBody([
                             html.H6("Prediction Details:", className="mb-3"),
                             html.P([
-                                html.Strong("Model Used: "), 
+                                html.Strong("Model digunakan: "), 
                                 model_config['name']
                             ], className="mb-2"),
                             html.P([
-                                html.Strong("Training Data: "), 
+                                html.Strong("Data training: "), 
                                 f"{df['tahun'].min()}-{df['tahun'].max()}" if 'tahun' in df.columns else "Multiple periods"
                             ], className="mb-2"),
                             html.P([
-                                html.Strong("Features: "), 
+                                html.Strong("Feature: "), 
                                 f"{len(available_features)} variables"
                             ], className="mb-2"),
                             html.P([
-                                html.Strong("Model Accuracy: "), 
+                                html.Strong("Akurasi Model: "), 
                                 f"{accuracy:.1f}%"
                             ], className="mb-0")
                         ])
@@ -874,7 +875,7 @@ def train_model_and_predict(n_clicks, collection_name, model_key):
 
         # 5. Success Status with Training Summary
         success_status = dbc.Alert([
-            html.H5("✅ Model Training Completed Successfully!", className="alert-heading"),
+            html.H5("✅ Model Training Berhasil Diselesaikan!", className="alert-heading"),
             html.P([
                 f"Model: {model_config['name']} | ",
                 f"Data: {len(df)} records ({df['tahun'].min()}-{df['tahun'].max()}) | " if 'tahun' in df.columns else f"Data: {len(df)} records | ",
@@ -882,8 +883,8 @@ def train_model_and_predict(n_clicks, collection_name, model_key):
             ]),
             html.Hr(),
             html.P([
-                "The model has been trained with chronologically sorted time series data. ",
-                f"Prediction confidence is {confidence_level.lower()} based on the R² score of {accuracy:.1f}%."
+                "Model ini telah dilatih dengan data time-series yang diurutkan secara kronologis.",
+                f"Confidence sebesar {confidence_level.lower()} berdasar pada skor R² {accuracy:.1f}%."
             ], className="mb-0")
         ], color="success")
 
@@ -919,9 +920,9 @@ def train_model_and_predict(n_clicks, collection_name, model_key):
         )
         
         error_status = dbc.Alert([
-            html.H5("❌ Critical Training Error", className="alert-heading"),
-            html.P(f"An unexpected error occurred: {str(e)}"),
-            html.P("Please check your data format and try again.")
+            html.H5("❌ Error saat training model", className="alert-heading"),
+            html.P(f"Terjadi error: {str(e)}"),
+            html.P("Cek format data dan coba lagi.")
         ], color="danger")
         
         return None, None, error_status, empty_fig, empty_fig, html.P(""), error_status
@@ -941,7 +942,7 @@ def show_data_preview(collection_name):
     try:
         df = get_all_data(collection_name)
         if df.empty:
-            return dbc.Alert("No data found in this collection.", color="warning")
+            return dbc.Alert("Tidak ada data ditemukan.", color="warning")
         
         # Sort by year for preview
         if 'tahun' in df.columns:
@@ -957,18 +958,18 @@ def show_data_preview(collection_name):
             )
             
             return dbc.Card([
-                dbc.CardHeader(html.H6(f"Data Preview - {collection_name}", className="mb-0")),
+                dbc.CardHeader(html.H6(f"Preview Data - {collection_name}", className="mb-0")),
                 dbc.CardBody([
-                    html.P(f"Total Records: {len(df)} | Years: {df['tahun'].min()}-{df['tahun'].max()}", 
+                    html.P(f"Jumlah Records: {len(df)} | Tahun: {df['tahun'].min()}-{df['tahun'].max()}", 
                            className="text-muted mb-3"),
                     preview_table
                 ])
             ])
         else:
-            return dbc.Alert("Data does not contain 'tahun' column required for time series analysis.", color="warning")
+            return dbc.Alert("Data tidak memuat 'tahun' sehingga tidak bisa dilakukan time-series analysis ", color="warning")
             
     except Exception as e:
-        return dbc.Alert(f"Error loading data preview: {str(e)}", color="danger")
+        return dbc.Alert(f"Error dalam memuat data: {str(e)}", color="danger")
 
 
 # Enhanced layout with data preview section (add this to your layout if needed)
@@ -986,21 +987,21 @@ def log_model_performance(model_key, accuracy, mape, mse, rmse, data_shape):
     model_name = MODEL_CONFIGS[model_key]["name"]
     
     logger.info("="*80)
-    logger.info(f"MODEL PERFORMANCE SUMMARY - {model_name}")
+    logger.info(f"Rangkuman Performa Model - {model_name}")
     logger.info("="*80)
-    logger.info(f"Dataset Shape: {data_shape}")
-    logger.info(f"R² Score (Accuracy): {accuracy:.2f}%")
+    logger.info(f"Dataset: {data_shape}")
+    logger.info(f"Skor R² (Akurasi): {accuracy:.2f}%")
     logger.info(f"MAPE: {mape:.2f}%")
     logger.info(f"MSE: {mse:.2f}")
     logger.info(f"RMSE: {rmse:.2f}")
     
     # Performance evaluation
-    if accuracy > 80:
-        logger.info("✅ EXCELLENT MODEL PERFORMANCE")
-    elif accuracy > 60:
-        logger.info("⚠️ GOOD MODEL PERFORMANCE")
+    if accuracy > 60:
+        logger.info("✅ PERMFORMA MAKSIMAL")
+    elif accuracy > 30:
+        logger.info("⚠️ PERFORMA BAIK")
     else:
-        logger.warning("❌ POOR MODEL PERFORMANCE - Consider data quality or feature engineering")
+        logger.warning("❌ PERFORMA KURANG BAIK")
     
     logger.info("="*80)
 

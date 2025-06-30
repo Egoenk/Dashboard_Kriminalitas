@@ -232,7 +232,7 @@ layout = dbc.Container([
                             html.Label("Nama Dataset:", className="fw-bold mb-2"),
                             dbc.Input(
                                 id="dataset-name-input",
-                                placeholder="Enter dataset collection name (e.g., crime_data_2024)",
+                                placeholder="Masukan nama dataset (ex. datasetkriminalitas_1)",
                                 type="text",
                                 className="mb-3"
                             ),

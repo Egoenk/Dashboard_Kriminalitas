@@ -84,9 +84,9 @@ def create_login_page():
                 dbc.Card([
                     dbc.CardBody([
                         html.Div([
-                            html.H2("Dashboard Kriminalitas", 
+                            html.H2("Sistem Informasi Kriminalitas & Analisis Prediktif Banyumas (SIKAPMAS)", 
                                    className="text-center mb-2 text-primary"),
-                            html.H5("Crime Rate Prediction System", 
+                            html.H5("Sistem Prediksi Kriminalitas", 
                                    className="text-center mb-4 text-muted"),
                         ]),
                         html.Div(id="login-alert"),
@@ -97,7 +97,7 @@ def create_login_page():
                                 dbc.Input(
                                     id="username-input",
                                     type="text",
-                                    placeholder="Enter your username",
+                                    placeholder="Masukan username",
                                     className="mb-3",
                                     size="lg"
                                 ),
@@ -108,7 +108,7 @@ def create_login_page():
                                 dbc.Input(
                                     id="password-input",
                                     type="password",
-                                    placeholder="Enter your password",
+                                    placeholder="Masukan Password",
                                     className="mb-4",
                                     size="lg"
                                 ),
