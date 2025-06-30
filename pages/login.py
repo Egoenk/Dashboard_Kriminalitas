@@ -1,12 +1,11 @@
-# login.py - Login page component
+# login.py - Fixed login page component
 import dash
-from dash import html, dcc
-from auth import create_login_page
+from dash import html
 
 # Register the login page
 dash.register_page(__name__, path="/login", title="Login")
 
-# Layout for the login page
+# Simple layout - the actual login page will be handled by the main app
 layout = html.Div([
-    create_login_page()
+    html.H1("Redirecting to login...", className="text-center")
 ])

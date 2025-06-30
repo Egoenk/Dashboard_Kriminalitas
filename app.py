@@ -1,4 +1,4 @@
-# app.py - Updated with authentication
+# app.py - Fixed authentication flow
 from dash import html, dcc, Input, Output, State, callback, ctx, clientside_callback
 import dash_bootstrap_components as dbc
 import dash
@@ -53,9 +53,15 @@ def create_sidebar(user_role=None):
 
 # Main app layout with session management
 app.layout = html.Div([
-    dcc.Location(id="url"),
+    dcc.Location(id="url", refresh=False),
     create_session_stores(),
-    html.Div(id="app-content")
+    html.Div(id="app-content"),
+    # Loading component for better UX
+    dcc.Loading(
+        id="loading",
+        type="default",
+        children=html.Div(id="loading-output")
+    )
 ])
 
 # Login callback
@@ -63,14 +69,14 @@ app.layout = html.Div([
     [Output('session-store', 'data'),
      Output('auth-state', 'data'),
      Output('login-alert', 'children'),
-     Output('login-redirect', 'pathname')],
+     Output('url', 'pathname')],  # Changed from login-redirect to url
     [Input('login-button', 'n_clicks')],
     [State('username-input', 'value'),
      State('password-input', 'value')],
     prevent_initial_call=True
 )
 def handle_login(n_clicks, username, password):
-    if n_clicks > 0 and username and password:
+    if n_clicks and n_clicks > 0 and username and password:
         auth_result = verify_user(username, password)
         
         if auth_result['authenticated']:
@@ -101,12 +107,12 @@ def handle_login(n_clicks, username, password):
 @callback(
     [Output('session-store', 'data', allow_duplicate=True),
      Output('auth-state', 'data', allow_duplicate=True),
-     Output('login-redirect', 'pathname', allow_duplicate=True)],
+     Output('url', 'pathname', allow_duplicate=True)],  # Changed from login-redirect to url
     [Input('logout-button', 'n_clicks')],
     prevent_initial_call=True
 )
 def handle_logout(n_clicks):
-    if n_clicks > 0:
+    if n_clicks and n_clicks > 0:
         return {}, {'authenticated': False}, '/login'
     return dash.no_update, dash.no_update, dash.no_update
 
@@ -114,30 +120,49 @@ def handle_logout(n_clicks):
 @callback(
     Output("app-content", "children"),
     [Input("url", "pathname"),
+     Input("session-store", "data"),
      Input("auth-state", "data")],
-    [State("session-store", "data")],
+    prevent_initial_call=False  # Allow initial call
 )
-def display_page(pathname, auth_state, session_data):
-    # Handle login page
-    if pathname == "/login" or not auth_state.get('authenticated', False):
+def display_page(pathname, session_data, auth_state):
+    # Initialize auth_state if None
+    if auth_state is None:
+        auth_state = {'authenticated': False}
+    
+    # Initialize session_data if None
+    if session_data is None:
+        session_data = {}
+    
+    # Check authentication status
+    is_authenticated = (
+        auth_state.get('authenticated', False) and 
+        session_data.get('authenticated', False)
+    )
+    
+    # Handle login page or unauthenticated access
+    if pathname == "/login" or not is_authenticated:
+        if pathname != "/login" and not is_authenticated:
+            # Redirect to login if trying to access protected page
+            return html.Div([
+                dcc.Location(id="login-redirect", pathname="/login", refresh=True)
+            ])
         return create_login_page()
     
     # If authenticated, get user role
     user_role = get_user_role(session_data)
     sidebar = create_sidebar(user_role)
     
-    # Handle routing for authenticated users
+    # Handle default route
     if pathname == "/" or pathname is None:
-        # Default page - redirect to data
         return html.Div([
             sidebar,
             html.Div([
-                dcc.Location(id="redirect", pathname="/data")
+                dcc.Location(id="redirect", pathname="/data", refresh=False)
             ], style={"margin-left": "18rem", "padding": "2rem 1rem"})
         ])
     
     # Check permissions for restricted pages
-    if pathname in ["/upload"] and not has_permission(session_data, 'upload'):
+    if pathname == "/upload" and not has_permission(session_data, 'upload'):
         return html.Div([
             sidebar,
             html.Div([
@@ -157,24 +182,23 @@ def display_page(pathname, auth_state, session_data):
         )
     ])
 
-# Client-side callback to handle initial authentication state
+# Simplified client-side callback for initial load
 clientside_callback(
     """
-    function(pathname) {
-        // Check if we have session data and redirect accordingly
-        const sessionData = sessionStorage.getItem('session-store');
-        const authState = sessionStorage.getItem('auth-state');
-        
-        if (!authState || !JSON.parse(authState).authenticated) {
-            if (pathname !== '/login') {
-                return '/login';
-            }
+    function(session_data, auth_state, pathname) {
+        // Only redirect if we have no authentication and not already on login
+        if ((!auth_state || !auth_state.authenticated) && 
+            (!session_data || !session_data.authenticated) &&
+            pathname !== '/login') {
+            return '/login';
         }
         return window.dash_clientside.no_update;
     }
     """,
-    Output('login-redirect', 'pathname', allow_duplicate=True),
-    Input('url', 'pathname'),
+    Output('url', 'pathname', allow_duplicate=True),
+    [Input('session-store', 'data'),
+     Input('auth-state', 'data'),
+     Input('url', 'pathname')],
     prevent_initial_call=True
 )
 
