@@ -4,10 +4,15 @@ import dash_bootstrap_components as dbc
 import pandas as pd
 from server import db
 import logging
+import hashlib
 
 dash.register_page(__name__, path="/data", name="Data")
 
 logger = logging.getLogger(__name__)
+
+def hash_password(password):
+    """Hash password using SHA-256"""
+    return hashlib.sha256(password.encode()).hexdigest()
 
 def get_firestore_collections():
     """Ambil semua collection di database"""
@@ -175,6 +180,71 @@ delete_confirm_modal = dbc.Modal(
     centered=True,
 )
 
+# Add User Modal for Admin only
+add_user_modal = dbc.Modal(
+    [
+        dbc.ModalHeader("Tambah Pengguna Baru"),
+        dbc.ModalBody([
+            dbc.Row([
+                dbc.Col([
+                    dbc.Label("Username:", className="fw-bold"),
+                    dbc.Input(
+                        id="new-username-input",
+                        type="text",
+                        placeholder="Masukkan username",
+                        className="mb-3"
+                    ),
+                ]),
+            ]),
+            dbc.Row([
+                dbc.Col([
+                    dbc.Label("Password:", className="fw-bold"),
+                    dbc.Input(
+                        id="new-password-input",
+                        type="password",
+                        placeholder="Masukkan password",
+                        className="mb-3"
+                    ),
+                ]),
+            ]),
+            dbc.Row([
+                dbc.Col([
+                    dbc.Label("Konfirmasi Password:", className="fw-bold"),
+                    dbc.Input(
+                        id="confirm-password-input",
+                        type="password",
+                        placeholder="Konfirmasi password",
+                        className="mb-3"
+                    ),
+                ]),
+            ]),
+            dbc.Row([
+                dbc.Col([
+                    dbc.Label("Role:", className="fw-bold"),
+                    dcc.Dropdown(
+                        id="new-user-role-dropdown",
+                        options=[
+                            {"label": "Admin", "value": "admin"},
+                            {"label": "Researcher", "value": "researcher"},
+                            {"label": "User", "value": "user"}
+                        ],
+                        placeholder="Pilih role pengguna",
+                        className="mb-3"
+                    ),
+                ]),
+            ]),
+            html.Div(id="add-user-alert")
+        ]),
+        dbc.ModalFooter([
+            dbc.Button("Batal", id="cancel-add-user", className="ms-auto"),
+            dbc.Button("Tambah Pengguna", id="confirm-add-user", color="success"),
+        ]),
+    ],
+    id="add-user-modal",
+    centered=True,
+    size="md"
+)
+
 # Layout for the data page
 layout = html.Div([
     # Page header
@@ -206,6 +276,10 @@ layout = html.Div([
                           color="warning", className="me-2", disabled=True),
                 dbc.Button("Hapus Koleksi", id="delete-collection-button", 
                           color="danger", className="me-2", disabled=True),
+                # Admin-only button for adding users
+                dbc.Button("Tambah Pengguna", id="add-user-button", 
+                          color="primary", className="me-2", 
+                          style={"display": "none"})  # Hidden by default
             ], className="mb-3")
         ], width=6)
     ]),
@@ -310,10 +384,12 @@ layout = html.Div([
     # Store components for data
     dcc.Store(id="table-data-store"),
     dcc.Store(id="selected-collection-store"),
+    dcc.Store(id="user-session-store"),  # To store user session data
     
     # Confirmation modals
     save_confirm_modal,
     delete_confirm_modal,
+    add_user_modal,  # Add user modal
     
     # Interval component for dynamic table updates
     dcc.Interval(
@@ -323,6 +399,25 @@ layout = html.Div([
         disabled=True
     )
 ])
+
+# Callback to show/hide admin-only button based on user role
+@callback(
+    [Output('add-user-button', 'style'),
+     Output('user-session-store', 'data')],
+    [Input('url', 'pathname'),
+     Input('session-store', 'data')]
+)
+def toggle_admin_button(pathname, session_data):
+    """Show 'Add User' button only for admin users"""
+    if not session_data or not session_data.get('authenticated'):
+        return {"display": "none"}, {}
+    
+    user_role = session_data.get('role', 'user')
+    
+    if user_role == 'admin':
+        return {"display": "inline-block"}, session_data
+    else:
+        return {"display": "none"}, session_data
 
 # Callback to populate collection dropdown
 @callback(
@@ -506,6 +601,86 @@ def toggle_delete_modal(n1, n2, n3, is_open):
     if n1 or n2 or n3:
         return not is_open
     return is_open
+
+# Callback to show add user modal (admin only)
+@callback(
+    Output("add-user-modal", "is_open"),
+    [Input("add-user-button", "n_clicks"),
+     Input("confirm-add-user", "n_clicks"),
+     Input("cancel-add-user", "n_clicks")],
+    State("add-user-modal", "is_open")
+)
+def toggle_add_user_modal(n1, n2, n3, is_open):
+    if n1 or n2 or n3:
+        return not is_open
+    return is_open
+
+# Callback to handle adding new user (admin only)
+@callback(
+    [Output("add-user-alert", "children"),
+     Output("new-username-input", "value"),
+     Output("new-password-input", "value"),
+     Output("confirm-password-input", "value"),
+     Output("new-user-role-dropdown", "value")],
+    Input("confirm-add-user", "n_clicks"),
+    [State("new-username-input", "value"),
+     State("new-password-input", "value"),
+     State("confirm-password-input", "value"),
+     State("new-user-role-dropdown", "value"),
+     State("user-session-store", "data")],
+    prevent_initial_call=True
+)
+def handle_add_user(n_clicks, username, password, confirm_password, role, session_data):
+    if not n_clicks:
+        return None, "", "", "", None
+    
+    # Check if user is admin
+    if not session_data or session_data.get('role') != 'admin':
+        return dbc.Alert("Akses ditolak. Hanya admin yang dapat menambah pengguna.", color="danger"), "", "", "", None
+    
+    # Validate input
+    if not username or not password or not confirm_password or not role:
+        return dbc.Alert("Semua field harus diisi.", color="warning"), username, password, confirm_password, role
+    
+    if password != confirm_password:
+        return dbc.Alert("Password dan konfirmasi password tidak cocok.", color="warning"), username, password, confirm_password, role
+    
+    if len(password) < 6:
+        return dbc.Alert("Password minimal 6 karakter.", color="warning"), username, password, confirm_password, role
+    
+    try:
+        # Check if username already exists
+        users_ref = db.collection('users')
+        existing_user = users_ref.where('username', '==', username).limit(1).get()
+        
+        if existing_user:
+            return dbc.Alert("Username sudah digunakan. Pilih username lain.", color="warning"), username, password, confirm_password, role
+        
+        # Create new user
+        hashed_password = hash_password(password)
+        new_user_data = {
+            'username': username,
+            'password': hashed_password,
+            'role': role,
+            'created_at': pd.Timestamp.now().strftime("%Y-%m-%d %H:%M:%S"),
+            'created_by': session_data.get('username', 'admin')
+        }
+        
+        # Add to Firestore
+        users_ref.add(new_user_data)
+        
+        success_msg = dbc.Alert([
+            html.H6("Pengguna berhasil ditambahkan!", className="alert-heading"),
+            html.P(f"Username: {username}"),
+            html.P(f"Role: {role}"),
+            html.P("Pengguna dapat langsung login dengan kredensial yang dibuat.")
+        ], color="success")
+        
+        return success_msg, "", "", "", None
+        
+    except Exception as e:
+        error_msg = dbc.Alert(f"Error menambahkan pengguna: {str(e)}", color="danger")
+        return error_msg, username, password, confirm_password, role
 
 # Combined callback for both save and delete operations
 @callback(

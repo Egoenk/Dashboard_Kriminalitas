@@ -1,4 +1,4 @@
-# app.py - Fixed authentication flow
+# app.py - Fixed authentication flow with landing page
 from dash import html, dcc, Input, Output, State, callback, ctx, clientside_callback
 import dash_bootstrap_components as dbc
 import dash
@@ -15,15 +15,16 @@ from auth import (
 # Sidebar layout with role-based navigation
 def create_sidebar(user_role=None):
     nav_items = [
-        dbc.NavLink("2. Lihat Data", href="/data", active="exact"),
-        dbc.NavLink("3. Visualisasi Data", href="/visualisasi", active="exact"),
-        dbc.NavLink("4. Augmentasi Data", href="/augmentation", active="exact"),
-        dbc.NavLink("5. Prediksi Data", href="/prediction", active="exact"),
+        dbc.NavLink("Landing Page", href="/dashboard", active="exact"),
+        dbc.NavLink("Lihat Data", href="/data", active="exact"),
+        dbc.NavLink("Visualisasi Data", href="/visualisasi", active="exact"),
+        dbc.NavLink("Augmentasi Data", href="/augmentation", active="exact"),
+        dbc.NavLink("Prediksi Data", href="/prediction", active="exact"),
     ]
     
     # Add upload link based on role
     if user_role in ['admin', 'researcher']:
-        nav_items.insert(0, dbc.NavLink("1. Upload CSV", href="/upload", active="exact"))
+        nav_items.insert(1, dbc.NavLink("Upload CSV", href="/upload", active="exact"))
     
     return html.Div([
         html.H2("SIKAPMAS", className="display-6 text-primary"),
@@ -91,7 +92,7 @@ def handle_login(n_clicks, username, password):
                 session_data,
                 {'authenticated': True},
                 None,
-                '/data'  # Redirect to data page after successful login
+                '/dashboard'
             )
         else:
             alert = dbc.Alert(
@@ -152,12 +153,12 @@ def display_page(pathname, session_data, auth_state):
     user_role = get_user_role(session_data)
     sidebar = create_sidebar(user_role)
     
-    # Handle default route
+    # Handle default route - redirect to dashboard
     if pathname == "/" or pathname is None:
         return html.Div([
             sidebar,
             html.Div([
-                dcc.Location(id="redirect", pathname="/data", refresh=False)
+                dcc.Location(id="redirect", pathname="/dashboard", refresh=False)
             ], style={"margin-left": "18rem", "padding": "2rem 1rem"})
         ])
     

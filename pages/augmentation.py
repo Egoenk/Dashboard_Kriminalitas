@@ -241,7 +241,7 @@ def augment_crime_data(df, num_entries, noise_level=0.1):
                 if pd.notna(base_row[col]):
                     original_value = float(base_row[col])
                     # Add random variation (5-15%)
-                    variation = np.random.uniform(0.85, 1.15)
+                    variation = np.random.uniform(0.90, 1.1)
                     row[col] = max(0, original_value * variation)
                 else:
                     row[col] = 0

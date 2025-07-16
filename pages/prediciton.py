@@ -73,7 +73,6 @@ def get_collection_data(collection_name):
         return []
 
 def get_all_data(collection_name='crime_data'):
-    """Get data from specified collection and sort chronologically by tahun"""
     try:
         data = get_collection_data(collection_name)
         if not data:
@@ -82,20 +81,16 @@ def get_all_data(collection_name='crime_data'):
         
         df = pd.DataFrame(data)
         
-        # CRITICAL FIX: Sort by year to ensure chronological order for time series
         if 'tahun' in df.columns:
-            # Handle potential data type issues
             df['tahun'] = pd.to_numeric(df['tahun'], errors='coerce')
-            df = df.dropna(subset=['tahun'])  # Remove rows with invalid years
+            df = df.dropna(subset=['tahun'])
             df = df.sort_values('tahun', ascending=True).reset_index(drop=True)
             
             years = df['tahun'].unique()
-            logger.info(f"Data sorted chronologically by tahun: {sorted(years)}")
-            logger.info(f"Total records: {len(df)} spanning {len(years)} years ({min(years)}-{max(years)})")
+            logger.info(f"Data diurutkan berdasarkan tahun: {sorted(years)}")
+            logger.info(f"Total records: {len(df)} rentang {len(years)} tahun ({min(years)}-{max(years)})")
         else:
-            logger.warning("Column 'tahun' not found - chronological sorting not applied!")
-            logger.warning("This may cause issues with time series predictions!")
-        
+            logger.warning("Kolom tahun tidak ditemukan")        
         return df
         
     except Exception as e:
@@ -105,10 +100,10 @@ def get_all_data(collection_name='crime_data'):
 def validate_temporal_data(df):
     """Validate temporal aspects of the data"""
     if df.empty:
-        return False, "No data available"
+        return False, "Data tidak ada"
     
     if 'tahun' not in df.columns:
-        return False, "Missing 'tahun' column - cannot perform time series analysis"
+        return False, "Tahun tidak ada"
     
     years = df['tahun'].dropna().sort_values()
     if len(years) == 0:
@@ -116,45 +111,40 @@ def validate_temporal_data(df):
     
     year_counts = df['tahun'].value_counts().sort_index()
     
-    logger.info(f"Temporal validation:")
-    logger.info(f"  Year range: {years.min()} to {years.max()}")
-    logger.info(f"  Years with data: {list(year_counts.index)}")
-    logger.info(f"  Records per year: {dict(year_counts)}")
+    logger.info(f"Validasi Temporal:")
+    logger.info(f"  Rentang Tahun: {years.min()} to {years.max()}")
+    logger.info(f"  Tahun Yang Berisi Data: {list(year_counts.index)}")
+    logger.info(f"  Record per Tahun: {dict(year_counts)}")
     
-    # Check for reasonable time series (at least 3 years for proper cross-validation)
     if len(year_counts) < 3:
-        return False, f"Insufficient temporal data: only {len(year_counts)} years (minimum 3 required)"
+        return False, f"Data kurang: only {len(year_counts)} (tahun minimal berjumlah 3)"
     
-    return True, f"Temporal data validated: {len(year_counts)} years of data"
+    return True, f"Data tervalidasi: {len(year_counts)} tahun yang berisi data"
 
 def validate_model_data(df, model_key):
-    """Validate if data contains required columns for the selected model"""
     model_config = MODEL_CONFIGS[model_key]
     required_cols = model_config["features"] + [model_config["target"]]
     missing_cols = [col for col in required_cols if col not in df.columns]
     
     if missing_cols:
-        logger.error(f"Missing columns for {model_config['name']}: {missing_cols}")
+        logger.error(f"Kolom hilang untuk {model_config['name']}: {missing_cols}")
         return False, missing_cols
     
-    # Check for sufficient non-null data
     null_counts = df[required_cols].isnull().sum()
-    problematic_cols = null_counts[null_counts > len(df) * 0.5].index.tolist()  # >50% null
+    problematic_cols = null_counts[null_counts > len(df) * 0.5].index.tolist()
     
     if problematic_cols:
-        logger.warning(f"Columns with excessive null values: {problematic_cols}")
+        logger.warning(f"kolom tidak berisi: {problematic_cols}")
         return False, problematic_cols
     
-    logger.info(f"Data validation passed for {model_config['name']}")
+    logger.info(f"Validasi Data bersahil untuk {model_config['name']}")
     return True, []
 
 def preprocess_data(df, model_key):
-    """Preprocess the data based on selected model"""
     if df.empty:
-        logger.error("No data available for preprocessing.")
+        logger.error("Tidak ada data.")
         return None, None, None, []
 
-    # Validate temporal data first
     is_temporal_valid, temp_msg = validate_temporal_data(df)
     if not is_temporal_valid:
         logger.error(f"Temporal validation failed: {temp_msg}")
@@ -162,27 +152,21 @@ def preprocess_data(df, model_key):
 
     model_config = MODEL_CONFIGS[model_key]
     
-    # Validate model data requirements
     is_valid, missing_cols = validate_model_data(df, model_key)
     if not is_valid:
         return None, None, None, missing_cols
 
-    # Ensure data is sorted chronologically (double-check)
     if 'tahun' in df.columns:
         df = df.sort_values('tahun', ascending=True).reset_index(drop=True)
-        logger.info(f"Data confirmed chronologically sorted: {df['tahun'].min()} to {df['tahun'].max()}")
+        logger.info(f"Data urut dari tahun: {df['tahun'].min()} sampai {df['tahun'].max()}")
 
-    # Get required columns
     feature_cols = model_config["features"]
     target_col = model_config["target"]
     
-    # Filter available features
     available_features = [col for col in feature_cols if col in df.columns]
     
-    # Remove rows with missing target values
     df_clean = df.dropna(subset=[target_col])
     
-    # Remove outliers using Z-score on numeric columns
     numeric_cols = df_clean.select_dtypes(include=[np.number]).columns
     outlier_mask = pd.Series([False] * len(df_clean), index=df_clean.index)
     
@@ -193,48 +177,39 @@ def preprocess_data(df, model_key):
             outlier_mask = outlier_mask | col_outliers
     
     if outlier_mask.any():
-        logger.warning(f"Outliers detected and removed: {outlier_mask.sum()} rows out of {len(df_clean)}")
+        logger.warning(f"Outlier dideteksi dan dihapus: {outlier_mask.sum()} dari {len(df_clean)}")
         df_clean = df_clean[~outlier_mask]
 
-    # Final feature and target extraction
     X = df_clean[available_features]
     y = df_clean[target_col].values
 
-    # Check for sufficient data after cleaning
     if len(X) < 10:
-        logger.error(f"Insufficient data after cleaning: only {len(X)} records")
-        return None, None, None, ["Insufficient data after preprocessing"]
+        logger.error(f"Data Kurang Setelah Pembersihan: Hanya {len(X)} records")
+        return None, None, None, ["Data tidak mencukupi"]
 
     logger.info(f"Preprocessing complete:")
     logger.info(f"  Model: {model_config['name']}")
-    logger.info(f"  Features used: {len(available_features)} out of {len(feature_cols)}")
-    logger.info(f"  Final dataset size: {len(X)} records")
-    logger.info(f"  Year range: {df_clean['tahun'].min()} - {df_clean['tahun'].max()}")
+    logger.info(f"  Features used: {len(available_features)} dari {len(feature_cols)}")
+    logger.info(f"  Dataset final: {len(X)} records")
+    logger.info(f"  Range tahun: {df_clean['tahun'].min()} - {df_clean['tahun'].max()}")
     
     return X, y, df_clean, []
 
 def split_data(X, y, df, n_splits=5):
-    """Split data into training and testing sets using TimeSeriesSplit with proper logging"""
-    
-    # Validate minimum data requirements
+
     if len(X) < n_splits + 1:
         logger.warning(f"Insufficient data for {n_splits} splits. Reducing to {len(X)-1} splits")
         n_splits = max(2, len(X) - 1)
     
-    # Log the chronological order before splitting
     if 'tahun' in df.columns:
         years = df['tahun'].values
-        logger.info(f"Time series split preparation:")
-        logger.info(f"  Data chronological order: {list(years)}")
-        logger.info(f"  Unique years: {sorted(set(years))}")
+        logger.info(f"  Data berdasarkan urutan waktu: {list(years)}")
     
     tscv = TimeSeriesSplit(n_splits=n_splits)
     splits = list(tscv.split(X))
     
-    # Use the last split for final train/test
     train_index, test_index = splits[-1]
     
-    # Log the train/test distribution
     if 'tahun' in df.columns:
         train_years = df.iloc[train_index]['tahun'].values
         test_years = df.iloc[test_index]['tahun'].values
@@ -243,7 +218,6 @@ def split_data(X, y, df, n_splits=5):
         logger.info(f"  Training data: {len(train_index)} records from years {sorted(set(train_years))}")
         logger.info(f"  Testing data: {len(test_index)} records from years {sorted(set(test_years))}")
         
-        # Validate that test years are after train years (as expected in time series)
         max_train_year = max(train_years)
         min_test_year = min(test_years)
         
@@ -258,33 +232,17 @@ def split_data(X, y, df, n_splits=5):
     return X_train, X_test, y_train, y_test
 
 def normalize_features(X_train, X_test):
-    """Normalize features using StandardScaler."""
     scaler = StandardScaler()
-    
-    # Log original feature statistics
-    logger.info("Feature normalization:")
-    logger.info(f"  Training features shape: {X_train.shape}")
-    logger.info(f"  Testing features shape: {X_test.shape}")
     
     X_train_scaled = scaler.fit_transform(X_train)
     X_test_scaled = scaler.transform(X_test)
     
-    # Log scaling statistics
-    feature_names = X_train.columns.tolist()
-    for i, feature in enumerate(feature_names[:3]):  # Log first 3 features
-        logger.info(f"  {feature}: mean={scaler.mean_[i]:.2f}, std={scaler.scale_[i]:.2f}")
-    
     return X_train_scaled, X_test_scaled, scaler
 
 def train_and_evaluate_model(X_train, y_train, X_test, y_test, feature_names):
-    """Train and evaluate the Random Forest model with comprehensive logging."""
-    
-    logger.info("Starting model training with hyperparameter optimization...")
-    
-    # Base model
+        
     model = RandomForestRegressor(random_state=48)
     
-    # Parameter grid for optimization
     param_grid = {
         "n_estimators": [300],
         "max_depth": [15],
@@ -294,7 +252,6 @@ def train_and_evaluate_model(X_train, y_train, X_test, y_test, feature_names):
         "bootstrap": [True]
     }
     
-    # Grid search with time series cross-validation
     cv_splits = 5
     if len(X_train) < 500:
         cv_splits = 3  
@@ -314,96 +271,79 @@ def train_and_evaluate_model(X_train, y_train, X_test, y_test, feature_names):
     grid_search.fit(X_train, y_train)
     best_model = grid_search.best_estimator_
     
-    logger.info(f"Best model parameters found:")
+    logger.info(f"Parameter model terbaik ditemukan:")
     for param, value in grid_search.best_params_.items():
         logger.info(f"  {param}: {value}")
-    logger.info(f"Best cross-validation R² score: {grid_search.best_score_:.4f}")
+    logger.info(f"R² score Terbaik: {grid_search.best_score_:.4f}")
 
-    # Evaluate model on test set
     y_pred = best_model.predict(X_test)
     
-    # Calculate comprehensive metrics
     r2 = r2_score(y_test, y_pred)
     mape = mean_absolute_percentage_error(y_test, y_pred)
     mse = mean_squared_error(y_test, y_pred)
     rmse = np.sqrt(mse)
     
-    # Additional metrics
     mae = np.mean(np.abs(y_test - y_pred))
     accuracy_percentage = r2 * 100
     
-    logger.info(f"Model evaluation results:")
+    logger.info(f"Hasil Evaluasi:")
     logger.info(f"  R² Score: {r2:.4f} ({accuracy_percentage:.2f}%)")
     logger.info(f"  MAPE: {mape:.4f} ({mape*100:.2f}%)")
     logger.info(f"  MSE: {mse:.2f}")
     logger.info(f"  RMSE: {rmse:.2f}")
     logger.info(f"  MAE: {mae:.2f}")
     
-    # Feature importance analysis
     if hasattr(best_model, 'feature_importances_') and len(feature_names) > 0:
         feature_importance = pd.DataFrame({
             'feature': feature_names,
             'importance': best_model.feature_importances_
         }).sort_values('importance', ascending=False)
         
-        logger.info("Top 5 most important features:")
-        for idx, row in feature_importance.head().iterrows():
-            logger.info(f"  {row['feature']}: {row['importance']:.4f}")
-
-    return best_model, accuracy_percentage, mape*100, mse, rmse, y_pred, y_test
+        return best_model, accuracy_percentage, mape*100, mse, rmse, y_pred, y_test
 
 def predict_next_year(model, df, scaler, model_key):
-    """Predict the next year's crime rate using the trained model."""
     if df.empty:
-        logger.error("No data available for future prediction")
+        logger.error("Tidak ada data")
         return None
     
     model_config = MODEL_CONFIGS[model_key]
     available_features = [col for col in model_config["features"] if col in df.columns]
     
-    # Use the most recent year's data for prediction
     latest_data = df.iloc[-1:].copy()
     latest_year = latest_data['tahun'].iloc[0] if 'tahun' in df.columns else "Unknown"
     
-    logger.info(f"Making prediction for period after {latest_year}")
-    logger.info(f"Using data: {latest_data[available_features].iloc[0].to_dict()}")
+    logger.info(f"Membuat prediksi dari tahun {latest_year}")
+    logger.info(f"Menggunakan data: {latest_data[available_features].iloc[0].to_dict()}")
     
     X = latest_data[available_features]
     X_scaled = scaler.transform(X)
     y_next = model.predict(X_scaled)[0]
     
-    logger.info(f"Predicted crime count for next period: {y_next:.2f}")
+    logger.info(f"Jumlah angka kriminalitas diterima: {y_next:.2f}")
     return y_next
 
 def run_model_pipeline(df, model_key):
-    """Run the entire model pipeline: preprocessing, training, evaluation, and prediction."""
-    logger.info(f"Starting model pipeline for {MODEL_CONFIGS[model_key]['name']}")
     
     if df.empty:
-        logger.error("No data provided for the model pipeline.")
+        logger.error("Tidak ada data.")
         return None, None, None, None, None, None, None, None, ["No data available"]
 
-    # Preprocess data
     X, y, processed_df, errors = preprocess_data(df, model_key)
     if X is None:
-        logger.error("Preprocessing failed")
+        logger.error("Preprocessing gagal")
         return None, None, None, None, None, None, None, None, errors
 
-    # Split data
     X_train, X_test, y_train, y_test = split_data(X, y, processed_df)
 
-    # Normalize features
     X_train_scaled, X_test_scaled, scaler = normalize_features(X_train, X_test)
 
-    # Train and evaluate model
     model, accuracy, mape, mse, rmse, y_pred, y_test = train_and_evaluate_model(
         X_train_scaled, y_train, X_test_scaled, y_test, X.columns.tolist()
     )
 
-    # Predict next year's value
     y_next = predict_next_year(model, processed_df, scaler, model_key)
 
-    logger.info("Model pipeline completed successfully")
+    logger.info("Model pipeline berhasil diselesaikan")
     return model, accuracy, mape, mse, rmse, y_next, y_pred, y_test, []
 
 # Layout
@@ -411,7 +351,7 @@ layout = dbc.Container([
     # Title
     dbc.Row([
         dbc.Col([
-            html.H2("Crime Rate Prediction Dashboard", className="text-center mb-4"),
+            html.H2("SIKAPMAS", className="text-center mb-4"),
             html.P("Sistem Prediksi Tingkat Kriminalitas dengan Dual Model", 
                    className="text-center text-muted mb-4"),
             html.Hr(),

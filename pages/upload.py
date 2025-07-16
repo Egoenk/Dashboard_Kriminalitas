@@ -11,6 +11,7 @@ import logging
 from pathlib import Path
 import random
 import string
+import numpy as np
 
 dash.register_page(__name__, path="/upload", name="Upload")
 
@@ -22,18 +23,60 @@ def generate_random_id(length=20):
     return ''.join(random.choice(chars) for _ in range(length))
 
 def convert_value(val):
-    """Convert string ke float"""
+    """Convert string ke float/int dengan handling untuk format tahun"""
     if isinstance(val, str):
-        val = val.replace(",", ".")  # replace comma with dot
+        val = val.strip()  # Remove whitespace
+        
+        # Handle empty strings
+        if not val:
+            return None
+            
+        # Special handling for year values (4 digits with period as thousand separator)
+        # Check if it looks like a year: 4 digits with one period in the middle
+        if len(val) == 5 and val[1] == '.' and val.replace('.', '').isdigit():
+            # This is likely a year like "2.015" -> should be 2015
+            return int(val.replace('.', ''))
+        
+        # Handle comma as decimal separator
+        val = val.replace(",", ".")
+        
         try:
             # Try converting to float or int
             if "." in val:
-                return float(val)
+                float_val = float(val)
+                # Check if it's actually an integer (no decimal part)
+                if float_val.is_integer():
+                    return int(float_val)
+                return float_val
             else:
                 return int(val)
         except ValueError:
             return val  # return original string if not a number
     return val  # return original if not a string
+
+def convert_year_column(val):
+    """Khusus untuk konversi kolom tahun"""
+    if pd.isna(val):
+        return None
+    
+    if isinstance(val, str):
+        # Remove any non-digit characters and convert
+        cleaned = ''.join(filter(str.isdigit, val))
+        if cleaned:
+            return int(cleaned)
+        return None
+    elif isinstance(val, (int, np.integer)):
+        return int(val)
+    elif isinstance(val, (float, np.floating)):
+        # Convert float to int if it's a valid year
+        if not pd.isna(val):
+            year_val = int(val)
+            # Basic validation for reasonable year range
+            if 1900 <= year_val <= 2100:
+                return year_val
+        return None
+    
+    return None
 
 def clean_field_name(field_name):
     """preprop nama"""
@@ -70,15 +113,17 @@ def upload_to_firestore(data, collection_name):
                 
                 for key, value in record.items():
                     clean_key = clean_field_name(key)
-                    clean_value = convert_value(value)
+                    
+                    # Special handling for tahun column
+                    if clean_key == 'tahun':
+                        clean_value = convert_year_column(value)
+                        tahun_value = clean_value
+                    else:
+                        clean_value = convert_value(value)
                     
                     # Skip empty/null values
                     if clean_value is not None and clean_value != '':
                         cleaned_record[clean_key] = clean_value
-                        
-                        # Check if this is the tahun field
-                        if clean_key == 'tahun':
-                            tahun_value = clean_value
                 
                 # Generate random document ID
                 doc_id = generate_random_id()
@@ -90,7 +135,7 @@ def upload_to_firestore(data, collection_name):
                     # Try to find tahun in original record if not found in cleaned
                     for key, value in record.items():
                         if str(key).lower() in ['tahun', 'year']:
-                            tahun_value = convert_value(value)
+                            tahun_value = convert_year_column(value)
                             if tahun_value is not None:
                                 cleaned_record['tahun'] = tahun_value
                                 break
@@ -122,6 +167,18 @@ def upload_to_firestore(data, collection_name):
             'total_records': len(data) if data else 0,
             'errors': []
         }
+
+def identify_year_columns(columns):
+    """Identify potential year columns from column names"""
+    year_keywords = ['tahun', 'year', 'yr', 'thn']
+    year_columns = []
+    
+    for col in columns:
+        col_lower = str(col).lower().strip()
+        if any(keyword in col_lower for keyword in year_keywords):
+            year_columns.append(col)
+    
+    return year_columns
     
 def parse_uploaded_file(contents, filename):
     """Parse uploaded file contents"""
@@ -142,7 +199,8 @@ def parse_uploaded_file(contents, filename):
                 engine='python',  # More flexible parsing
                 skipinitialspace=True,  # Skip whitespace after delimiter
                 na_values=['', 'N/A', 'NULL', 'null', 'NaN'],  # Handle missing values
-                keep_default_na=True
+                keep_default_na=True,
+                dtype=str  # Read everything as string first to handle formatting
             )
             
             # Clean column names
@@ -150,7 +208,16 @@ def parse_uploaded_file(contents, filename):
             
             # Convert to records and handle NaN values
             data = df.where(pd.notnull(df), None).to_dict('records')
-            return data, None
+            
+            # Now convert values properly
+            converted_data = []
+            for record in data:
+                converted_record = {}
+                for key, value in record.items():
+                    converted_record[key] = convert_value(value)
+                converted_data.append(converted_record)
+            
+            return converted_data, None
         
         elif filename.endswith(('.xlsx', '.xls')):
             # Excel file
@@ -169,6 +236,7 @@ def parse_uploaded_file(contents, filename):
     except Exception as e:
         return None, f"Error saat parsing file {filename}: {str(e)}"
 
+
 # Layout
 layout = dbc.Container([
     dbc.Row([
@@ -186,7 +254,7 @@ layout = dbc.Container([
                     html.H4("Upload File", className="mb-0")
                 ]),
                 dbc.CardBody([
-                    html.P("Upload dataset (JSON, CSV, atau Excel format)", 
+                    html.P("Upload dataset (CSV, atau Excel format)", 
                            className="text-muted mb-3"),
                     
                     # File upload component
@@ -196,7 +264,7 @@ layout = dbc.Container([
                             html.I(className="fas fa-cloud-upload-alt fa-3x mb-3"),
                             html.Br(),
                             html.P("Drag and Drop atau Klik untuk Memilih File"),
-                            html.P("Formats yang diteirima: JSON, CSV, Excel", 
+                            html.P("Formats yang diteirima: CSV, Excel", 
                                    className="text-muted small")
                         ]),
                         style={
