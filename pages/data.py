@@ -419,16 +419,30 @@ def toggle_admin_button(pathname, session_data):
     else:
         return {"display": "none"}, session_data
 
-# Callback to populate collection dropdown
 @callback(
     Output('data-collection-dropdown', 'options'),
-    Input('data-collection-dropdown', 'id')
+    [Input('data-collection-dropdown', 'id'),
+     Input('session-store', 'data')]  # Add session data as input
 )
-def update_collection_options(_):
-    """Update collection dropdown options"""
+def update_collection_options(_, session_data):
+    """Update collection dropdown options with role-based filtering"""
     try:
         collections = get_firestore_collections()
-        options = [{'label': col, 'value': col} for col in collections]
+        
+        # Get user role from session data
+        user_role = None
+        if session_data and session_data.get('authenticated'):
+            user_role = session_data.get('role', 'user')
+        
+        # Filter collections based on user role
+        filtered_collections = []
+        for col in collections:
+            # Hide 'users' collection from non-admin users
+            if col == 'users' and user_role != 'admin':
+                continue
+            filtered_collections.append(col)
+        
+        options = [{'label': col, 'value': col} for col in filtered_collections]
         return options
     except Exception as e:
         logger.error(f"Error updating collection options: {e}")
@@ -730,7 +744,6 @@ def handle_data_operations(save_clicks, delete_clicks, table_data, collection_na
                     doc_ref.set(row)
                     saved_count += 1
             
-            # Get updated data with proper sorting
             updated_data = get_collection_data(collection_name)
             
             success_msg = dbc.Alert([

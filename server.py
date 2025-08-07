@@ -97,12 +97,12 @@ def create_dash_app():
         use_pages=True
     )
     
-    app.title = "Crime Rate Prediction Dashboard"
+    app.title = "SIKAPMAS"
     
     # Configure server settings
     app.server.config.update(
         SECRET_KEY=os.environ.get('SECRET_KEY', 'your-secret-key-here'),
-        SEND_FILE_MAX_AGE_DEFAULT=31536000,  # 1 year cache for static files
+        SEND_FILE_MAX_AGE_DEFAULT=31536000, 
     )
     
     logger.info("Dash app created successfully!")

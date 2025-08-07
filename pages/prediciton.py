@@ -309,6 +309,11 @@ def predict_next_year(model, df, scaler, model_key):
     model_config = MODEL_CONFIGS[model_key]
     available_features = [col for col in model_config["features"] if col in df.columns]
     
+    if 'source' in df.columns:
+        original_data = df[df['source'] == 'original_data']
+        if not original_data.empty:
+            df = original_data
+    
     latest_data = df.iloc[-1:].copy()
     latest_year = latest_data['tahun'].iloc[0] if 'tahun' in df.columns else "Unknown"
     
@@ -319,7 +324,7 @@ def predict_next_year(model, df, scaler, model_key):
     X_scaled = scaler.transform(X)
     y_next = model.predict(X_scaled)[0]
     
-    logger.info(f"Jumlah angka kriminalitas diterima: {y_next:.2f}")
+    logger.info(f"Prediksi kriminalitas: {y_next:.2f}")
     return y_next
 
 def run_model_pipeline(df, model_key):
@@ -622,16 +627,14 @@ def train_model_and_predict(n_clicks, collection_name, model_key):
             
             return None, None, error_status, empty_fig, empty_fig, html.P(""), html.Div()
 
-        # SUCCESS: Create comprehensive results display
         
-        # 1. Metrics Cards with enhanced styling
         metrics_cards = dbc.Row([
             dbc.Col([
                 dbc.Card([
                     dbc.CardBody([
                         html.H3(f"{accuracy:.1f}%", className="text-primary mb-1", style={"font-weight": "bold"}),
                         html.P("Akurasi (R² Score)", className="text-muted mb-0"),
-                        html.Small("Tingkat ketepatan prediksi", className="text-secondary")
+                        html.Small("Seberapa Baik Model Menjelaskan Variasi Data", className="text-secondary")
                     ], className="text-center")
                 ], className="h-100 shadow-sm")
             ], width=3),
@@ -640,7 +643,7 @@ def train_model_and_predict(n_clicks, collection_name, model_key):
                     dbc.CardBody([
                         html.H3(f"{mape:.1f}%", className="text-warning mb-1", style={"font-weight": "bold"}),
                         html.P("MAPE", className="text-muted mb-0"),
-                        html.Small("Mean Absolute Percentage Error", className="text-secondary")
+                        html.Small("Deviasi Error Rata - Rata", className="text-secondary")
                     ], className="text-center")
                 ], className="h-100 shadow-sm")
             ], width=3),

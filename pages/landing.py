@@ -4,7 +4,6 @@ from dash import html, dcc
 import dash_bootstrap_components as dbc
 from dash import callback, Input, Output, State
 
-# Register the page
 dash.register_page(__name__, path="/dashboard", name="Dashboard")
 
 def create_feature_card(icon, title, description, color="primary"):

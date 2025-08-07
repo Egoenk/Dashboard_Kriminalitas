@@ -160,9 +160,9 @@ def has_permission(session_data, required_permission):
         return False
     
     permissions = {
-        'admin': ['view', 'upload', 'edit', 'delete', 'manage_users'],
-        'researcher': ['view', 'upload'],
-        'user': ['view']
+        'admin': ['view', 'upload', 'edit', 'delete', 'manage_users','augmentation','prediction'],
+        'researcher': ['view', 'upload','augmentation','prediction'],
+        'user': ['view','']
     }
     
     return required_permission in permissions.get(role, [])

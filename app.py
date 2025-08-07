@@ -1,4 +1,3 @@
-# app.py - Fixed authentication flow with landing page
 from dash import html, dcc, Input, Output, State, callback, ctx, clientside_callback
 import dash_bootstrap_components as dbc
 import dash
@@ -12,19 +11,19 @@ from auth import (
     has_permission
 )
 
-# Sidebar layout with role-based navigation
 def create_sidebar(user_role=None):
     nav_items = [
         dbc.NavLink("Landing Page", href="/dashboard", active="exact"),
         dbc.NavLink("Lihat Data", href="/data", active="exact"),
         dbc.NavLink("Visualisasi Data", href="/visualisasi", active="exact"),
-        dbc.NavLink("Augmentasi Data", href="/augmentation", active="exact"),
-        dbc.NavLink("Prediksi Data", href="/prediction", active="exact"),
     ]
     
     # Add upload link based on role
     if user_role in ['admin', 'researcher']:
         nav_items.insert(1, dbc.NavLink("Upload CSV", href="/upload", active="exact"))
+        nav_items.insert(4, dbc.NavLink("Augmentasi Data", href="/augmentation", active="exact")),
+        nav_items.insert(5,  dbc.NavLink("Prediksi Data", href="/prediction", active="exact"))
+
     
     return html.Div([
         html.H2("SIKAPMAS", className="display-6 text-primary"),
@@ -117,7 +116,6 @@ def handle_logout(n_clicks):
         return {}, {'authenticated': False}, '/login'
     return dash.no_update, dash.no_update, dash.no_update
 
-# Main callback to handle page routing with authentication
 @callback(
     Output("app-content", "children"),
     [Input("url", "pathname"),
@@ -163,16 +161,39 @@ def display_page(pathname, session_data, auth_state):
         ])
     
     # Check permissions for restricted pages
-    if pathname == "/upload" and not has_permission(session_data, 'upload'):
+    if pathname == "/upload"  and not has_permission(session_data, 'upload'):
         return html.Div([
             sidebar,
             html.Div([
                 dbc.Alert(
-                    f"Access denied. Your role ({user_role}) does not have permission to access this page.",
+                    f"Akses ditolak ({user_role}) user tidak memiliki akses.",
                     color="danger"
                 )
             ], style={"margin-left": "18rem", "padding": "2rem 1rem"})
         ])
+    
+    if pathname == "/augmentation"  and not has_permission(session_data,'augmentation'):
+        return html.Div([
+            sidebar,
+            html.Div([
+                dbc.Alert(
+                    f"Akses ditolak ({user_role}) user tidak memiliki akses.",
+                    color="danger"
+                )
+            ], style={"margin-left": "18rem", "padding": "2rem 1rem"})
+        ])
+    
+    if pathname == "/prediction"  and not has_permission(session_data, 'prediction'):
+        return html.Div([
+            sidebar,
+            html.Div([
+                dbc.Alert(
+                    f"Akses ditolak ({user_role}) user tidak memiliki akses.",
+                    color="danger"
+                )
+            ], style={"margin-left": "18rem", "padding": "2rem 1rem"})
+        ])
+    
     
     # Show the requested page with sidebar
     return html.Div([
